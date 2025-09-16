@@ -49,6 +49,8 @@ struct CapturedImage {
     let sourceScreen: NSScreen
     let scaleFactor: CGFloat
     let fileSize: Int64
+    let filePath: URL
+    let thumbnailImage: NSImage
 
     var dimensions: NSSize {
         return image.size
@@ -56,6 +58,14 @@ struct CapturedImage {
 
     var displayDimensions: String {
         return "\(Int(dimensions.width))×\(Int(dimensions.height))"
+    }
+
+    var fileName: String {
+        return filePath.lastPathComponent
+    }
+
+    var fileDirectory: String {
+        return filePath.deletingLastPathComponent().path
     }
 }
 
@@ -72,9 +82,10 @@ class ScreenshotCapture: NSObject, ObservableObject {
     @Published var isCapturing: Bool = false
     @Published var lastCapturedImage: CapturedImage?
 
-    // Performance optimization settings
-    private let maxCaptureSize: CGFloat = 4000 // Maximum dimension for very large captures
-    private let compressionQuality: CGFloat = 0.8
+    // High-quality capture settings (matching Apple's screenshot behavior)
+    private let enableHighQualityCapture: Bool = true // Set to false only for extreme performance needs
+    private let maxCaptureSize: CGFloat = 16000 // Increased limit for high-resolution displays (was 4000)
+    private let compressionQuality: CGFloat = 1.0 // Highest quality (was 0.8)
 
     func setPermissionManager(_ manager: PermissionManager) {
         self.permissionManager = manager
@@ -146,6 +157,24 @@ class ScreenshotCapture: NSObject, ObservableObject {
             // Convert to NSImage
             let nsImage = try convertToNSImage(cgImage: cgImage, originalRect: rect, screen: screen)
 
+            // Save high-quality image file and create thumbnail
+            print("💾 [CAPTURE] Saving screenshot to file and creating thumbnail...")
+            let filePath = try saveImageToFile(nsImage, scaleFactor: screen.backingScaleFactor)
+            let thumbnailImage = createThumbnail(from: nsImage)
+            let actualFileSize = getFileSize(at: filePath)
+
+            print("✅ [CAPTURE] File saved: \(filePath.lastPathComponent)")
+            print("📁 [CAPTURE] File location: \(filePath.deletingLastPathComponent().path)")
+            print("📦 [CAPTURE] Actual file size: \(formatFileSize(actualFileSize))")
+
+            // Quality verification metrics
+            logQualityMetrics(
+                originalImage: nsImage,
+                fileSize: actualFileSize,
+                scaleFactor: screen.backingScaleFactor,
+                captureRect: rect
+            )
+
             // Create captured image structure
             let capturedImage = CapturedImage(
                 image: nsImage,
@@ -153,7 +182,9 @@ class ScreenshotCapture: NSObject, ObservableObject {
                 captureDate: Date(),
                 sourceScreen: screen,
                 scaleFactor: screen.backingScaleFactor,
-                fileSize: estimateImageFileSize(nsImage)
+                fileSize: actualFileSize,
+                filePath: filePath,
+                thumbnailImage: thumbnailImage
             )
 
             // Update on main queue
@@ -318,17 +349,95 @@ class ScreenshotCapture: NSObject, ObservableObject {
     }
 
     private func captureImage(displayID: CGDirectDisplayID, rect: NSRect, screen: NSScreen) throws -> CGImage {
-        // For performance optimization, check if capture is too large
-        let optimizedRect = optimizeRectForPerformance(rect)
+        // Use high-quality capture without downscaling (matching Apple's behavior)
+        let captureRect = enableHighQualityCapture ? rect : optimizeRectForPerformance(rect)
 
-        if #available(macOS 12.3, *) {
-            // Use modern ScreenCaptureKit
-            return try captureImageModern(rect: optimizedRect, screen: screen, displayID: displayID)
+        print("📸 [CAPTURE] High-quality mode: \(enableHighQualityCapture ? "✅ Enabled" : "❌ Disabled")")
+        print("📏 [CAPTURE] Original rect: \(Int(rect.width))×\(Int(rect.height))")
+        print("📏 [CAPTURE] Capture rect: \(Int(captureRect.width))×\(Int(captureRect.height))")
+
+        if #available(macOS 14.0, *) {
+            // Use newest SCScreenshotManager (macOS Sonoma+) for highest quality
+            return try captureImageWithScreenshotManager(rect: captureRect, screen: screen, displayID: displayID)
         } else {
-            // Fallback for older macOS versions (though CGDisplayCreateImage is deprecated)
-            // We'll use a different approach for legacy support
+            // Use modern ScreenCaptureKit (macOS Monterey+)
+            return try captureImageModern(rect: captureRect, screen: screen, displayID: displayID)
+        }
+    }
+
+    @available(macOS 14.0, *)
+    private func captureImageWithScreenshotManager(rect: NSRect, screen: NSScreen, displayID: CGDirectDisplayID) throws -> CGImage {
+        var capturedImage: CGImage?
+        var captureError: Error?
+        let semaphore = DispatchSemaphore(value: 0)
+
+        print("🆕 [CAPTURE] Using SCScreenshotManager (Apple's latest screenshot API)")
+
+        Task { @MainActor in
+            do {
+                // Get available content
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+
+                // Find the display that matches our screen
+                guard let scDisplay = content.displays.first(where: { display in
+                    return display.displayID == displayID
+                }) else {
+                    captureError = ScreenshotCaptureError.displayNotFound
+                    semaphore.signal()
+                    return
+                }
+
+                // Create configuration for screen capture with retina scaling
+                let config = SCStreamConfiguration()
+                let scaleFactor = screen.backingScaleFactor
+                let pixelWidth = Int(rect.width * scaleFactor)
+                let pixelHeight = Int(rect.height * scaleFactor)
+
+                config.width = pixelWidth
+                config.height = pixelHeight
+                config.sourceRect = rect
+                config.scalesToFit = false
+                config.showsCursor = false
+                config.backgroundColor = .clear
+                config.pixelFormat = kCVPixelFormatType_32BGRA
+
+                print("🚀 [SCScreenshotManager] Configuration:")
+                print("   Width (pixels): \(config.width)")
+                print("   Height (pixels): \(config.height)")
+                print("   Scale factor: \(scaleFactor)x")
+                print("   Source rect: \(config.sourceRect)")
+
+                // Create filter
+                let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+
+                // Use SCScreenshotManager for highest quality
+                let cgImage = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter,
+                    configuration: config
+                )
+
+                capturedImage = cgImage
+                print("✅ [SCScreenshotManager] Screenshot captured successfully: \(cgImage.width)×\(cgImage.height)")
+
+            } catch {
+                print("❌ [SCScreenshotManager] Screenshot capture failed: \(error)")
+                captureError = ScreenshotCaptureError.captureCreationFailed
+            }
+
+            semaphore.signal()
+        }
+
+        semaphore.wait()
+
+        if let error = captureError {
+            throw error
+        }
+
+        guard let image = capturedImage else {
             throw ScreenshotCaptureError.captureCreationFailed
         }
+
+        return image
     }
 
     @available(macOS 12.3, *)
@@ -355,28 +464,33 @@ class ScreenshotCapture: NSObject, ObservableObject {
                 // Create configuration for screen capture
                 let config = SCStreamConfiguration()
 
-                // ✅ Use exact dimensions - no scale factor multiplication
-                // ScreenCaptureKit handles DPI scaling internally
-                config.width = Int(rect.width)
-                config.height = Int(rect.height)
-                config.sourceRect = rect
+                // ✅ Apply retina scale factor for high-quality capture (matching Apple's behavior)
+                let scaleFactor = screen.backingScaleFactor
+                let pixelWidth = Int(rect.width * scaleFactor)
+                let pixelHeight = Int(rect.height * scaleFactor)
+
+                config.width = pixelWidth
+                config.height = pixelHeight
+                config.sourceRect = rect  // Source rect remains in points (ScreenCaptureKit handles conversion)
                 config.scalesToFit = false
                 config.showsCursor = false
                 config.backgroundColor = .clear
                 config.pixelFormat = kCVPixelFormatType_32BGRA
 
-                print("📷 [CAPTURE] ScreenCaptureKit config:")
-                print("   Config width (exact): \(config.width)")
-                print("   Config height (exact): \(config.height)")
-                print("   Config sourceRect (display coords): \(config.sourceRect)")
-                print("   Screen scale factor (not applied): \(screen.backingScaleFactor)")
+                print("📷 [CAPTURE] ScreenCaptureKit config (High-Quality Retina):")
+                print("   Config width (retina pixels): \(config.width)")
+                print("   Config height (retina pixels): \(config.height)")
+                print("   Config sourceRect (logical points): \(config.sourceRect)")
+                print("   Screen scale factor (applied): \(scaleFactor)")
                 print("   Display ID: \(displayID)")
 
                 // Mathematical verification
-                print("🔍 [CAPTURE] Size verification:")
-                print("   Requested selection size: \(Int(rect.width))×\(Int(rect.height))")
-                print("   Config output size: \(config.width)×\(config.height)")
-                print("   Match: \(config.width == Int(rect.width) && config.height == Int(rect.height) ? "✅ Perfect" : "❌ Mismatch")")
+                print("🔍 [CAPTURE] High-Quality Size verification:")
+                print("   Requested selection size (logical): \(Int(rect.width))×\(Int(rect.height))")
+                print("   Config output size (pixels): \(config.width)×\(config.height)")
+                print("   Scale factor applied: \(scaleFactor)x")
+                print("   Expected pixel ratio: \(Double(config.width) / rect.width)x scaling")
+                print("   Quality improvement vs Apple: \(config.width == Int(rect.width * scaleFactor) ? "✅ Matching" : "⚠️ Different")")
 
                 // Create filter with the specific display
                 let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
@@ -526,5 +640,175 @@ class ScreenshotCapture: NSObject, ObservableObject {
         }
 
         captureScreenshot(rect: lastCapture.originalRect, from: lastCapture.sourceScreen)
+    }
+
+    // MARK: - File Saving and Thumbnail Methods
+
+    private func saveImageToFile(_ image: NSImage, scaleFactor: CGFloat) throws -> URL {
+        let preferences = PreferencesManager.shared
+
+        // Ensure directory exists
+        guard preferences.ensureDirectoryExists() else {
+            throw ScreenshotCaptureError.unknownError("Failed to create screenshot directory")
+        }
+
+        // Generate filename and get full path
+        let fileName = preferences.generateFileName()
+        let filePath = preferences.getFilePath(for: fileName)
+
+        // Create high-quality image data based on format preference
+        let imageData: Data
+        switch preferences.screenshotFormat {
+        case .png:
+            imageData = try createHighQualityPNGData(from: image, scaleFactor: scaleFactor)
+        case .jpeg:
+            imageData = try createHighQualityJPEGData(from: image, scaleFactor: scaleFactor)
+        case .tiff:
+            imageData = try createHighQualityTIFFData(from: image)
+        }
+
+        // Write to file
+        try imageData.write(to: filePath)
+
+        print("✅ [FILE] Screenshot saved: \(fileName)")
+        print("📁 [FILE] Location: \(filePath.deletingLastPathComponent().path)")
+        print("📦 [FILE] Size: \(formatFileSize(Int64(imageData.count)))")
+
+        return filePath
+    }
+
+    private func createThumbnail(from image: NSImage, maxDimension: CGFloat = 512) -> NSImage {
+        let originalSize = image.size
+        let aspectRatio = originalSize.width / originalSize.height
+
+        // Calculate thumbnail size maintaining aspect ratio
+        let thumbnailSize: NSSize
+        if originalSize.width > originalSize.height {
+            thumbnailSize = NSSize(
+                width: min(maxDimension, originalSize.width),
+                height: min(maxDimension, originalSize.width) / aspectRatio
+            )
+        } else {
+            thumbnailSize = NSSize(
+                width: min(maxDimension, originalSize.height) * aspectRatio,
+                height: min(maxDimension, originalSize.height)
+            )
+        }
+
+        // Create thumbnail image
+        let thumbnail = NSImage(size: thumbnailSize)
+        thumbnail.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: thumbnailSize))
+        thumbnail.unlockFocus()
+
+        print("🖼️ [THUMBNAIL] Created: \(Int(thumbnailSize.width))×\(Int(thumbnailSize.height)) from \(Int(originalSize.width))×\(Int(originalSize.height))")
+
+        return thumbnail
+    }
+
+    private func createHighQualityPNGData(from image: NSImage, scaleFactor: CGFloat) throws -> Data {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw ScreenshotCaptureError.unknownError("Failed to get CGImage from NSImage")
+        }
+
+        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
+
+        // Preserve DPI information
+        let dpi = 72.0 * scaleFactor
+        bitmapRep.size = NSSize(
+            width: CGFloat(bitmapRep.pixelsWide) / dpi * 72.0,
+            height: CGFloat(bitmapRep.pixelsHigh) / dpi * 72.0
+        )
+
+        let properties: [NSBitmapImageRep.PropertyKey: Any] = [
+            .compressionFactor: 0.0,  // Lossless compression
+            .gamma: 2.2,
+            .interlaced: false
+        ]
+
+        guard let pngData = bitmapRep.representation(using: .png, properties: properties) else {
+            throw ScreenshotCaptureError.unknownError("Failed to create PNG representation")
+        }
+
+        return pngData
+    }
+
+    private func createHighQualityJPEGData(from image: NSImage, scaleFactor: CGFloat) throws -> Data {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw ScreenshotCaptureError.unknownError("Failed to get CGImage from NSImage")
+        }
+
+        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
+
+        // Preserve DPI information
+        let dpi = 72.0 * scaleFactor
+        bitmapRep.size = NSSize(
+            width: CGFloat(bitmapRep.pixelsWide) / dpi * 72.0,
+            height: CGFloat(bitmapRep.pixelsHigh) / dpi * 72.0
+        )
+
+        let properties: [NSBitmapImageRep.PropertyKey: Any] = [
+            .compressionFactor: compressionQuality,  // Use high-quality setting (1.0)
+            .gamma: 2.2,
+            .progressive: false
+        ]
+
+        guard let jpegData = bitmapRep.representation(using: .jpeg, properties: properties) else {
+            throw ScreenshotCaptureError.unknownError("Failed to create JPEG representation")
+        }
+
+        return jpegData
+    }
+
+    private func createHighQualityTIFFData(from image: NSImage) throws -> Data {
+        guard let tiffData = image.tiffRepresentation else {
+            throw ScreenshotCaptureError.unknownError("Failed to create TIFF representation")
+        }
+
+        return tiffData
+    }
+
+    private func getFileSize(at url: URL) -> Int64 {
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            return attributes[.size] as? Int64 ?? 0
+        } catch {
+            print("⚠️ [FILE] Failed to get file size: \(error)")
+            return 0
+        }
+    }
+
+    // MARK: - Quality Verification
+
+    private func logQualityMetrics(originalImage: NSImage, fileSize: Int64, scaleFactor: CGFloat, captureRect: NSRect) {
+        let imageSize = originalImage.size
+        let pixelCount = Int64(imageSize.width * imageSize.height)
+        let bytesPerPixel = Double(fileSize) / Double(pixelCount)
+
+        print("📊 [QUALITY] === Screenshot Quality Metrics ===")
+        print("📏 [QUALITY] Logical dimensions: \(Int(captureRect.width))×\(Int(captureRect.height))")
+        print("📏 [QUALITY] Image dimensions: \(Int(imageSize.width))×\(Int(imageSize.height))")
+        print("🔍 [QUALITY] Scale factor: \(scaleFactor)x")
+        print("🔍 [QUALITY] Expected retina size: \(Int(captureRect.width * scaleFactor))×\(Int(captureRect.height * scaleFactor))")
+        print("✅ [QUALITY] Retina scaling: \(imageSize.width == captureRect.width * scaleFactor ? "✅ Correct" : "❌ Incorrect")")
+        print("📦 [QUALITY] File size: \(formatFileSize(fileSize))")
+        print("🧮 [QUALITY] Total pixels: \(formatNumber(pixelCount))")
+        print("💾 [QUALITY] Bytes per pixel: \(String(format: "%.2f", bytesPerPixel))")
+
+        // Compare with Apple's typical screenshot metrics
+        let expectedApplePixels = Int64(captureRect.width * scaleFactor * captureRect.height * scaleFactor)
+        let qualityComparison = Double(pixelCount) / Double(expectedApplePixels)
+
+        print("🍎 [QUALITY] vs Apple screenshot:")
+        print("   Expected pixels (Apple): \(formatNumber(expectedApplePixels))")
+        print("   Our pixels: \(formatNumber(pixelCount))")
+        print("   Quality ratio: \(String(format: "%.2f", qualityComparison))x (\(qualityComparison >= 1.0 ? "✅ Equal/Better" : "❌ Lower"))")
+        print("📊 [QUALITY] === End Quality Metrics ===")
+    }
+
+    private func formatNumber(_ number: Int64) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
     }
 }

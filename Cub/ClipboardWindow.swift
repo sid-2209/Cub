@@ -269,24 +269,6 @@ class ClipboardWindow: NSWindow {
         print("📋 [CLIPBOARD] Original state restored")
     }
 
-    func updateWithCapturedImage(_ capturedImage: CapturedImage) {
-        print("📋 [CLIPBOARD] updateWithCapturedImage called with image: \(capturedImage.displayDimensions)")
-        print("📋 [CLIPBOARD] Current window state: \(windowState)")
-        print("📋 [CLIPBOARD] ClipboardView available: \(clipboardView != nil ? "✅ Yes" : "❌ No")")
-
-        currentImage = capturedImage
-        clipboardView.displayImage(capturedImage)
-
-        // Show window if it's hidden and we have an image
-        if windowState == .hidden {
-            print("📋 [CLIPBOARD] Window is hidden, calling showClipboard()")
-            showClipboard()
-        } else {
-            print("📋 [CLIPBOARD] Window state is: \(windowState), not showing")
-        }
-
-        print("📋 [CLIPBOARD] Clipboard updated with new image: \(capturedImage.displayDimensions)")
-    }
 
     // MARK: - State Management
 
@@ -335,6 +317,27 @@ class ClipboardWindow: NSWindow {
 
     var hasImage: Bool {
         return currentImage != nil
+    }
+
+    // MARK: - Screenshot Update
+
+    func updateWithCapturedImage(_ capturedImage: CapturedImage) {
+        print("📸 [UPDATE] Updating clipboard window with captured image")
+        print("📁 [UPDATE] File: \(capturedImage.fileName)")
+        print("📦 [UPDATE] Size: \(capturedImage.displayDimensions)")
+
+        // Store the captured image for drag operations
+        currentImage = capturedImage
+
+        // Update the clipboardView with thumbnail
+        if let clipboardView = clipboardView {
+            clipboardView.updateWithCapturedImage(capturedImage)
+        }
+
+        // Show the clipboard window
+        showClipboard()
+
+        print("✅ [UPDATE] Clipboard window updated successfully")
     }
 
     // MARK: - Window Behavior Overrides
@@ -504,53 +507,46 @@ class DraggableImageView: NSImageView {
     private func createPasteboardItem(from capturedImage: CapturedImage) -> NSPasteboardItem? {
         let pasteboardItem = NSPasteboardItem()
 
-        // Add TIFF representation (highest quality)
-        if let tiffData = capturedImage.image.tiffRepresentation {
-            pasteboardItem.setData(tiffData, forType: .tiff)
-            print("📎 [DRAG] Added TIFF data (\(tiffData.count) bytes)")
-        }
+        print("📎 [DRAG] Creating file-based pasteboard item")
+        print("📁 [DRAG] Original file: \(capturedImage.filePath.path)")
+        print("📦 [DRAG] File size: \(formatFileSize(capturedImage.fileSize))")
 
-        // Add PNG representation (web compatible)
-        if let pngData = createPNGData(from: capturedImage.image) {
-            pasteboardItem.setData(pngData, forType: .png)
-            print("📎 [DRAG] Added PNG data (\(pngData.count) bytes)")
-        }
+        // Priority 1: File URL (preserves 100% original quality)
+        pasteboardItem.setString(capturedImage.filePath.absoluteString, forType: .fileURL)
+        print("✅ [DRAG] Added original file URL: \(capturedImage.filePath.lastPathComponent)")
 
-        // Add file URL as fallback (create temporary file)
-        if let fileURL = createTemporaryImageFile(from: capturedImage) {
-            pasteboardItem.setString(fileURL.absoluteString, forType: .fileURL)
-            print("📎 [DRAG] Added file URL: \(fileURL.path)")
+        // Priority 2: File content as data (for apps that prefer data over URLs)
+        do {
+            let fileData = try Data(contentsOf: capturedImage.filePath)
+            let fileExtension = capturedImage.filePath.pathExtension.lowercased()
+
+            switch fileExtension {
+            case "png":
+                pasteboardItem.setData(fileData, forType: .png)
+                print("✅ [DRAG] Added PNG file data (\(fileData.count) bytes)")
+            case "jpg", "jpeg":
+                pasteboardItem.setData(fileData, forType: NSPasteboard.PasteboardType("public.jpeg"))
+                print("✅ [DRAG] Added JPEG file data (\(fileData.count) bytes)")
+            case "tiff", "tif":
+                pasteboardItem.setData(fileData, forType: .tiff)
+                print("✅ [DRAG] Added TIFF file data (\(fileData.count) bytes)")
+            default:
+                print("⚠️ [DRAG] Unknown file format: \(fileExtension)")
+            }
+        } catch {
+            print("❌ [DRAG] Failed to read file data: \(error)")
         }
 
         return pasteboardItem
     }
 
-    private func createPNGData(from image: NSImage) -> Data? {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return nil
-        }
-
-        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
-        return bitmapRep.representation(using: .png, properties: [:])
+    private func formatFileSize(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 
-    private func createTemporaryImageFile(from capturedImage: CapturedImage) -> URL? {
-        let tempDirectory = FileManager.default.temporaryDirectory
-        let fileName = "Cub_Screenshot_\(Int(Date().timeIntervalSince1970)).png"
-        let fileURL = tempDirectory.appendingPathComponent(fileName)
-
-        guard let pngData = createPNGData(from: capturedImage.image) else {
-            return nil
-        }
-
-        do {
-            try pngData.write(to: fileURL)
-            return fileURL
-        } catch {
-            print("❌ [DRAG] Failed to create temporary file: \(error)")
-            return nil
-        }
-    }
 }
 
 // MARK: - NSDraggingSource Implementation
@@ -788,6 +784,34 @@ class ClipboardWindowView: NSView {
         placeholderLabel.isHidden = false
 
         needsDisplay = true
+    }
+
+    func updateWithCapturedImage(_ capturedImage: CapturedImage) {
+        print("🖼️ [VIEW] Updating ClipboardWindowView with captured image")
+
+        // Set the thumbnail image for display (not the full resolution image)
+        imageView.image = capturedImage.thumbnailImage
+        imageView.capturedImage = capturedImage
+
+        // Update metadata with file information
+        let sizeInMB = Double(capturedImage.fileSize) / (1024 * 1024)
+        let formattedSize = String(format: "%.1f MB", sizeInMB)
+
+        metadataLabel.stringValue = """
+        \(capturedImage.displayDimensions)
+        \(formattedSize) • \(capturedImage.fileName)
+        \(capturedImage.fileDirectory)
+        """
+
+        // Show the image and hide placeholder
+        imageView.isHidden = false
+        metadataLabel.isHidden = false
+        placeholderLabel.isHidden = true
+
+        needsDisplay = true
+
+        print("✅ [VIEW] Image view updated with thumbnail: \(Int(capturedImage.thumbnailImage.size.width))×\(Int(capturedImage.thumbnailImage.size.height))")
+        print("📁 [VIEW] Original file: \(capturedImage.filePath.path)")
     }
 
     @objc private func colorPreferenceChanged() {
