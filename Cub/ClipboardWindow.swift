@@ -56,12 +56,17 @@ class ClipboardWindow: NSWindow {
     }
 
     private func setupWindow() {
-        // Window appearance
+        // Modern macOS window appearance with NSVisualEffectView
         backgroundColor = NSColor.clear
         isOpaque = false
         hasShadow = true
         level = NSWindow.Level.floating
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+
+        // Enable modern window appearance
+        titlebarAppearsTransparent = true
+        titleVisibility = .hidden
+        styleMask.insert(.fullSizeContentView)
 
         // Window behavior
         hidesOnDeactivate = false
@@ -71,17 +76,65 @@ class ClipboardWindow: NSWindow {
         // Remove from window list and dock
         isExcludedFromWindowsMenu = true
 
+        // Accessibility configuration for window
+        if #available(macOS 10.13, *) {
+            setAccessibilityLabel("Cub Screenshot Clipboard")
+            setAccessibilityHelp("Shows captured screenshots. Drag images to copy them to other applications.")
+            setAccessibilityIdentifier("clipboard-window")
+        }
+
         // Set strict size constraints on the window itself
         minSize = NSSize(width: 200, height: 300)
         maxSize = NSSize(width: windowWidth, height: windowHeight)
 
-        // Window ordering will be handled by overridden properties
+        // Setup modern material background
+        setupModernBackground()
 
         // Position window properly
         positionWindowAtRightEdge()
 
         print("📋 Window setup completed with level: \(level.rawValue)")
         print("📋 Window size constraints: min=\(minSize), max=\(maxSize)")
+    }
+
+    private func setupModernBackground() {
+        // Create NSVisualEffectView for modern macOS appearance
+        let visualEffectView = NSVisualEffectView()
+
+        // Configure material and appearance based on system theme
+        if #available(macOS 10.14, *) {
+            let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            visualEffectView.material = isDarkMode ? .hudWindow : .popover
+            visualEffectView.state = .active
+
+            // Enable automatic appearance updates
+            visualEffectView.appearance = nil // Use system appearance
+        } else {
+            visualEffectView.material = .dark
+            visualEffectView.state = .active
+        }
+
+        // Configure blending and masking
+        visualEffectView.blendingMode = .behindWindow
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.cornerRadius = 12.0
+        visualEffectView.layer?.masksToBounds = true
+
+        // Set frame to fill window
+        visualEffectView.frame = contentView?.bounds ?? frame
+        visualEffectView.autoresizingMask = [.width, .height]
+
+        // Insert as the background view
+        if let contentView = contentView {
+            contentView.addSubview(visualEffectView, positioned: .below, relativeTo: nil)
+        }
+
+        if #available(macOS 10.14, *) {
+            let materialName = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? "hudWindow" : "popover"
+            print("✅ [MODERN] NSVisualEffectView configured with material: \(materialName)")
+        } else {
+            print("✅ [MODERN] NSVisualEffectView configured with dark material")
+        }
     }
 
     private func setupClipboardView() {
@@ -628,10 +681,10 @@ class ClipboardWindowView: NSView {
     }
 
     private func setupView() {
-        // Background
+        // Modern transparent background for NSVisualEffectView integration
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        layer?.cornerRadius = 8.0
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 12.0
 
         // Add size constraints to prevent expansion
         translatesAutoresizingMaskIntoConstraints = false
@@ -639,14 +692,111 @@ class ClipboardWindowView: NSView {
         setupImageView()
         setupMetadataLabel()
         setupPlaceholderLabel()
+        setupModernVibrancy()
+        setupAccessibility()
 
-        // Listen for color preference changes
+        // Listen for color preference changes and appearance changes
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(colorPreferenceChanged),
             name: NSNotification.Name("BorderColorChanged"),
             object: nil
         )
+
+        // Listen for system appearance changes (light/dark mode)
+        if #available(macOS 10.14, *) {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(appearanceChanged),
+                name: NSApplication.didChangeScreenParametersNotification,
+                object: nil
+            )
+
+            // Also listen for effective appearance changes
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(effectiveAppearanceChanged),
+                name: NSNotification.Name("NSEffectiveAppearanceDidChangeNotification"),
+                object: nil
+            )
+        }
+    }
+
+    private func setupModernVibrancy() {
+        // Apply vibrancy effects for better text legibility over blurred background
+        if #available(macOS 10.14, *) {
+            // Primary text with vibrancy
+            placeholderLabel.textColor = NSColor.labelColor
+            metadataLabel.textColor = NSColor.secondaryLabelColor
+
+            // Enhance readability with subtle background for text
+            placeholderLabel.wantsLayer = true
+            placeholderLabel.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.1).cgColor
+            placeholderLabel.layer?.cornerRadius = 4.0
+        }
+
+        print("✅ [MODERN] Vibrancy effects configured for text legibility")
+    }
+
+    private func setupAccessibility() {
+        // Configure accessibility for the main view container
+        if #available(macOS 10.13, *) {
+            setAccessibilityRole(.group)
+            setAccessibilityLabel("Screenshot clipboard container")
+            setAccessibilityHelp("Contains screenshot thumbnails that can be dragged to other applications")
+            setAccessibilityIdentifier("clipboard-container")
+
+            // Make the view focusable for keyboard navigation
+            setAccessibilityFocused(false)
+        }
+
+        print("♿ [A11Y] Accessibility configuration completed")
+    }
+
+    @objc private func appearanceChanged() {
+        // Respond to system appearance changes (light/dark mode)
+        DispatchQueue.main.async {
+            self.updateForCurrentAppearance()
+        }
+        print("🎨 [MODERN] Appearance updated for system theme change")
+    }
+
+    @objc private func effectiveAppearanceChanged() {
+        // Respond to effective appearance changes
+        DispatchQueue.main.async {
+            self.updateForCurrentAppearance()
+        }
+        print("🎨 [MODERN] Effective appearance changed")
+    }
+
+    private func updateForCurrentAppearance() {
+        // Update visual elements for current system appearance
+        needsDisplay = true
+        setupModernVibrancy()
+
+        // Update window's visual effect view material based on appearance
+        if #available(macOS 10.14, *) {
+            if let window = window {
+                updateWindowMaterialForAppearance(window)
+            }
+        }
+    }
+
+    private func updateWindowMaterialForAppearance(_ window: NSWindow) {
+        // Find and update the visual effect view
+        if let contentView = window.contentView {
+            for subview in contentView.subviews {
+                if let visualEffectView = subview as? NSVisualEffectView {
+                    if #available(macOS 10.14, *) {
+                        // Automatically adapt material based on system appearance
+                        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        visualEffectView.material = isDarkMode ? .hudWindow : .popover
+                        print("🎨 [MODERN] Updated material for \(isDarkMode ? "dark" : "light") mode")
+                    }
+                    break
+                }
+            }
+        }
     }
 
     private func setupImageView() {
@@ -654,6 +804,12 @@ class ClipboardWindowView: NSView {
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
         imageView.isHidden = true
+
+        // Accessibility configuration
+        imageView.setAccessibilityRole(.image)
+        imageView.setAccessibilityLabel("Screenshot thumbnail")
+        imageView.setAccessibilityHelp("Drag this image to copy it to another application")
+        imageView.setAccessibilityIdentifier("screenshot-thumbnail")
 
         addSubview(imageView)
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -665,7 +821,7 @@ class ClipboardWindowView: NSView {
             imageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -(outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding + 40)) // Space for metadata
         ])
 
-        print("📎 [SETUP] DraggableImageView created and configured for drag operations")
+        print("📎 [SETUP] DraggableImageView created and configured for drag operations with accessibility")
     }
 
     private func setupMetadataLabel() {
@@ -677,6 +833,11 @@ class ClipboardWindowView: NSView {
         metadataLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         metadataLabel.alignment = .center
         metadataLabel.isHidden = true
+
+        // Accessibility configuration
+        metadataLabel.setAccessibilityRole(.staticText)
+        metadataLabel.setAccessibilityLabel("Screenshot metadata")
+        metadataLabel.setAccessibilityIdentifier("screenshot-metadata")
 
         addSubview(metadataLabel)
         metadataLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -700,6 +861,12 @@ class ClipboardWindowView: NSView {
         placeholderLabel.stringValue = "No screenshots captured\n\nPress ⌘E to capture"
         placeholderLabel.maximumNumberOfLines = 0
 
+        // Accessibility configuration
+        placeholderLabel.setAccessibilityRole(.staticText)
+        placeholderLabel.setAccessibilityLabel("Clipboard status")
+        placeholderLabel.setAccessibilityHelp("Shows the current status of the clipboard window")
+        placeholderLabel.setAccessibilityIdentifier("clipboard-status")
+
         addSubview(placeholderLabel)
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -714,6 +881,7 @@ class ClipboardWindowView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
+        // Modern border design that works with NSVisualEffectView
         let outerRect = bounds
         let innerRect = NSRect(
             x: outerBorderWidth + borderSpacing,
@@ -722,20 +890,29 @@ class ClipboardWindowView: NSView {
             height: bounds.height - 2 * (outerBorderWidth + borderSpacing)
         )
 
-        // Draw outer border (subtle)
-        let outerPath = NSBezierPath(roundedRect: outerRect, xRadius: 8.0, yRadius: 8.0)
-        NSColor.separatorColor.setStroke()
+        // Draw subtle outer border with dynamic color
+        let outerPath = NSBezierPath(roundedRect: outerRect, xRadius: 12.0, yRadius: 12.0)
+        if #available(macOS 10.14, *) {
+            NSColor.separatorColor.withAlphaComponent(0.3).setStroke()
+        } else {
+            NSColor.separatorColor.setStroke()
+        }
         outerPath.lineWidth = outerBorderWidth
         outerPath.stroke()
 
-        // Draw inner dashed border (bold, colored)
-        let innerPath = NSBezierPath(roundedRect: innerRect, xRadius: 4.0, yRadius: 4.0)
-        currentBorderColor.setStroke()
+        // Draw modern inner accent border
+        let innerPath = NSBezierPath(roundedRect: innerRect, xRadius: 8.0, yRadius: 8.0)
+
+        // Use system accent color for modern appearance
+        if #available(macOS 10.14, *) {
+            NSColor.controlAccentColor.withAlphaComponent(0.6).setStroke()
+        } else {
+            currentBorderColor.setStroke()
+        }
+
         innerPath.lineWidth = innerBorderWidth
 
-        // Create dashed pattern
-        let dashPattern: [CGFloat] = [8.0, 4.0]
-        innerPath.setLineDash(dashPattern, count: 2, phase: 0.0)
+        // Modern solid border instead of dashed for cleaner look
         innerPath.stroke()
     }
 
@@ -770,8 +947,14 @@ class ClipboardWindowView: NSView {
         placeholderLabel.stringValue = "Selection detected\n\nDrag to select screen area"
         placeholderLabel.isHidden = false
 
+        // Update accessibility information
+        if #available(macOS 10.13, *) {
+            placeholderLabel.setAccessibilityValue("Selection detected. Drag to select screen area.")
+        }
+
         needsDisplay = true
         print("📋 [VIEW] Selection detected message displayed")
+        print("♿ [A11Y] Accessibility updated for selection state")
     }
 
     func clearImage() {
@@ -783,7 +966,14 @@ class ClipboardWindowView: NSView {
         placeholderLabel.stringValue = "No screenshots captured\n\nPress ⌘E to capture"
         placeholderLabel.isHidden = false
 
+        // Update accessibility information
+        if #available(macOS 10.13, *) {
+            placeholderLabel.setAccessibilityValue("No screenshots captured. Press Command E to capture.")
+            imageView.setAccessibilityValue(nil)
+        }
+
         needsDisplay = true
+        print("♿ [A11Y] Accessibility cleared for empty state")
     }
 
     func updateWithCapturedImage(_ capturedImage: CapturedImage) {
@@ -803,6 +993,13 @@ class ClipboardWindowView: NSView {
         \(capturedImage.fileDirectory)
         """
 
+        // Update accessibility information
+        if #available(macOS 10.13, *) {
+            let accessibilityDescription = "Screenshot of \(capturedImage.displayDimensions), file size \(formattedSize), saved as \(capturedImage.fileName)"
+            imageView.setAccessibilityValue(accessibilityDescription)
+            metadataLabel.setAccessibilityValue(metadataLabel.stringValue)
+        }
+
         // Show the image and hide placeholder
         imageView.isHidden = false
         metadataLabel.isHidden = false
@@ -812,6 +1009,7 @@ class ClipboardWindowView: NSView {
 
         print("✅ [VIEW] Image view updated with thumbnail: \(Int(capturedImage.thumbnailImage.size.width))×\(Int(capturedImage.thumbnailImage.size.height))")
         print("📁 [VIEW] Original file: \(capturedImage.filePath.path)")
+        print("♿ [A11Y] Accessibility information updated for screenshot")
     }
 
     @objc private func colorPreferenceChanged() {
