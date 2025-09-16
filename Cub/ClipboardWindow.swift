@@ -360,10 +360,244 @@ extension ClipboardWindowState {
     }
 }
 
+// MARK: - DraggableImageView
+
+class DraggableImageView: NSImageView {
+    var capturedImage: CapturedImage?
+    private var dragThreshold: CGFloat = 5.0
+    private var initialMouseLocation: NSPoint = .zero
+    private var isDragInProgress: Bool = false
+
+    override func mouseDown(with event: NSEvent) {
+        initialMouseLocation = event.locationInWindow
+        isDragInProgress = false
+
+        // Only handle drag if we have an image and valid bounds
+        guard let dragImage = image else {
+            print("📎 [DRAG] Mouse down ignored - no image available")
+            super.mouseDown(with: event)
+            return
+        }
+
+        guard bounds.width > 0 && bounds.height > 0 else {
+            print("❌ [DRAG] Mouse down ignored - invalid bounds: \(bounds)")
+            super.mouseDown(with: event)
+            return
+        }
+
+        guard capturedImage != nil else {
+            print("❌ [DRAG] Mouse down ignored - no captured image data available")
+            super.mouseDown(with: event)
+            return
+        }
+
+        print("📎 [DRAG] Mouse down on draggable image at: \(initialMouseLocation)")
+        print("📎 [DRAG] Image size: \(dragImage.size), bounds: \(bounds)")
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard image != nil else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        let currentLocation = event.locationInWindow
+        let dragDistance = sqrt(pow(currentLocation.x - initialMouseLocation.x, 2) + pow(currentLocation.y - initialMouseLocation.y, 2))
+
+        // Check if we've exceeded the drag threshold
+        if dragDistance > dragThreshold && !isDragInProgress {
+            isDragInProgress = true
+            print("📎 [DRAG] Drag threshold exceeded (\(String(format: "%.1f", dragDistance))px), initiating drag session")
+            print("📎 [DRAG] Current location: \(currentLocation), initial: \(initialMouseLocation)")
+
+            do {
+                try initiateDragSession(with: event)
+            } catch {
+                print("❌ [DRAG] Failed to initiate drag session: \(error)")
+                isDragInProgress = false
+            }
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let wasDragging = isDragInProgress
+        isDragInProgress = false
+
+        if wasDragging {
+            print("📎 [DRAG] Mouse up, drag session ended")
+        } else {
+            print("📎 [DRAG] Mouse up, no drag session was active")
+        }
+
+        super.mouseUp(with: event)
+    }
+
+    private func initiateDragSession(with event: NSEvent) throws {
+        guard let dragImage = image,
+              let capturedImageData = capturedImage else {
+            let error = NSError(domain: "DragError", code: 1, userInfo: [NSLocalizedDescriptionKey: "No image or captured image data available"])
+            print("❌ [DRAG] \(error.localizedDescription)")
+            throw error
+        }
+
+        // Validate image view bounds to prevent zero-size drag frame
+        guard bounds.width > 0 && bounds.height > 0 else {
+            let error = NSError(domain: "DragError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid bounds for drag operation: \(bounds)"])
+            print("❌ [DRAG] \(error.localizedDescription)")
+            throw error
+        }
+
+        print("📎 [DRAG] Preparing drag session for image: \(dragImage.size)")
+        print("📎 [DRAG] Image view bounds: \(bounds)")
+
+        // Create pasteboard item for drag session (don't write to pasteboard yet)
+        guard let pasteboardItem = createPasteboardItem(from: capturedImageData) else {
+            let error = NSError(domain: "DragError", code: 5, userInfo: [NSLocalizedDescriptionKey: "Failed to create pasteboard item"])
+            print("❌ [DRAG] \(error.localizedDescription)")
+            throw error
+        }
+
+        print("📎 [DRAG] Created pasteboard item with data formats")
+
+        // Create drag image (slightly smaller and semi-transparent)
+        let dragImageSize = NSSize(
+            width: min(dragImage.size.width * 0.8, 200),
+            height: min(dragImage.size.height * 0.8, 200)
+        )
+
+        let dragImageView = NSImageView(frame: NSRect(origin: .zero, size: dragImageSize))
+        dragImageView.image = dragImage
+        dragImageView.imageScaling = .scaleProportionallyUpOrDown
+        dragImageView.alphaValue = 0.8
+
+        // Calculate drag image offset (center it on cursor)
+        let _ = NSPoint(
+            x: -dragImageSize.width / 2,
+            y: -dragImageSize.height / 2
+        )
+
+        // Create NSDraggingItem and set its draggingFrame to prevent crash
+        let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
+
+        // Set the dragging frame to the image view's bounds (critical for drag to work)
+        draggingItem.draggingFrame = bounds
+
+        print("📎 [DRAG] Created dragging item with frame: \(draggingItem.draggingFrame)")
+
+        // Verify frame is non-zero before proceeding
+        guard draggingItem.draggingFrame.width > 0 && draggingItem.draggingFrame.height > 0 else {
+            let error = NSError(domain: "DragError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Dragging frame is zero size: \(draggingItem.draggingFrame)"])
+            print("❌ [DRAG] \(error.localizedDescription)")
+            throw error
+        }
+
+        // Begin the drag session (this will handle pasteboard operations internally)
+        beginDraggingSession(
+            with: [draggingItem],
+            event: event,
+            source: self
+        )
+
+        print("✅ [DRAG] Drag session initiated successfully with frame: \(draggingItem.draggingFrame)")
+    }
+
+    private func createPasteboardItem(from capturedImage: CapturedImage) -> NSPasteboardItem? {
+        let pasteboardItem = NSPasteboardItem()
+
+        // Add TIFF representation (highest quality)
+        if let tiffData = capturedImage.image.tiffRepresentation {
+            pasteboardItem.setData(tiffData, forType: .tiff)
+            print("📎 [DRAG] Added TIFF data (\(tiffData.count) bytes)")
+        }
+
+        // Add PNG representation (web compatible)
+        if let pngData = createPNGData(from: capturedImage.image) {
+            pasteboardItem.setData(pngData, forType: .png)
+            print("📎 [DRAG] Added PNG data (\(pngData.count) bytes)")
+        }
+
+        // Add file URL as fallback (create temporary file)
+        if let fileURL = createTemporaryImageFile(from: capturedImage) {
+            pasteboardItem.setString(fileURL.absoluteString, forType: .fileURL)
+            print("📎 [DRAG] Added file URL: \(fileURL.path)")
+        }
+
+        return pasteboardItem
+    }
+
+    private func createPNGData(from image: NSImage) -> Data? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+
+        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
+        return bitmapRep.representation(using: .png, properties: [:])
+    }
+
+    private func createTemporaryImageFile(from capturedImage: CapturedImage) -> URL? {
+        let tempDirectory = FileManager.default.temporaryDirectory
+        let fileName = "Cub_Screenshot_\(Int(Date().timeIntervalSince1970)).png"
+        let fileURL = tempDirectory.appendingPathComponent(fileName)
+
+        guard let pngData = createPNGData(from: capturedImage.image) else {
+            return nil
+        }
+
+        do {
+            try pngData.write(to: fileURL)
+            return fileURL
+        } catch {
+            print("❌ [DRAG] Failed to create temporary file: \(error)")
+            return nil
+        }
+    }
+}
+
+// MARK: - NSDraggingSource Implementation
+
+extension DraggableImageView: NSDraggingSource {
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        // Support copy operation (most common for images)
+        return .copy
+    }
+
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        print("📎 [DRAG] Drag session beginning at: \(screenPoint)")
+
+        // Add visual feedback - slightly fade the original image
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            self.animator().alphaValue = 0.6
+        }
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        print("📎 [DRAG] Drag session ended at: \(screenPoint) with operation: \(operation.rawValue)")
+
+        // Restore original appearance
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.3
+            self.animator().alphaValue = 1.0
+        }
+
+        // Provide user feedback based on operation
+        if operation == .copy {
+            print("✅ [DRAG] Image successfully copied to target application")
+        } else {
+            print("⚠️ [DRAG] Drag operation cancelled or failed")
+        }
+    }
+
+    func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+        // Optional: Add additional visual feedback during drag
+        // Could update cursor or provide other visual cues
+    }
+}
+
 // MARK: - ClipboardWindowView
 
 class ClipboardWindowView: NSView {
-    private var imageView: NSImageView!
+    private var imageView: DraggableImageView!
     private var metadataLabel: NSTextField!
     private var placeholderLabel: NSTextField!
 
@@ -420,7 +654,7 @@ class ClipboardWindowView: NSView {
     }
 
     private func setupImageView() {
-        imageView = NSImageView()
+        imageView = DraggableImageView()
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
         imageView.isHidden = true
@@ -434,6 +668,8 @@ class ClipboardWindowView: NSView {
             imageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -(outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding)),
             imageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -(outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding + 40)) // Space for metadata
         ])
+
+        print("📎 [SETUP] DraggableImageView created and configured for drag operations")
     }
 
     private func setupMetadataLabel() {
@@ -510,7 +746,9 @@ class ClipboardWindowView: NSView {
     // MARK: - Image Display
 
     func displayImage(_ capturedImage: CapturedImage) {
+        // Set both image and captured image data for drag operations
         imageView.image = capturedImage.image
+        imageView.capturedImage = capturedImage
         imageView.isHidden = false
         placeholderLabel.isHidden = true
 
@@ -524,6 +762,7 @@ class ClipboardWindowView: NSView {
         metadataLabel.isHidden = false
 
         needsDisplay = true
+        print("📎 [VIEW] Image displayed with drag capability: \(capturedImage.displayDimensions)")
     }
 
     func showSelectionDetected() {
