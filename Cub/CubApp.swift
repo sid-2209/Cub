@@ -51,6 +51,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         print("🪟 [APP] Preferences window controller initialized")
 
+        // Create shared gallery window controller
+        GalleryWindowController.createShared()
+        print("🖼️ [APP] Gallery window controller initialized")
+
         // Trigger app launch handlers
         print("🔑 [APP] Calling permission and hotkey handleAppLaunch...")
         permissionManager.handleAppLaunch()

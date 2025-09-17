@@ -2,7 +2,7 @@
 //  ClipboardWindowManager.swift
 //  Cub
 //
-//  Created by Claude on 16/09/25.
+//  Created by sid on 16/09/25.
 //
 
 import Foundation

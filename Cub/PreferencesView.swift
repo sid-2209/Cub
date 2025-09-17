@@ -2,7 +2,7 @@
 //  PreferencesView.swift
 //  Cub
 //
-//  Created by Claude on 17/09/25.
+//  Created by sid on 17/09/25.
 //
 
 import SwiftUI
@@ -128,12 +128,15 @@ struct PreferencesView: View {
                             Spacer()
                         }
 
+                        // Directory access status indicator
+                        DirectoryStatusView(preferencesManager: preferencesManager)
+
                         HStack {
                             TextField("", text: .constant(preferencesManager.screenshotSaveDirectory.path))
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .disabled(true)
 
-                            Button("Choose...") {
+                            Button("Choose Folder...") {
                                 preferencesManager.selectNewDirectory()
                             }
                         }
@@ -150,6 +153,9 @@ struct PreferencesView: View {
 
                             Spacer()
                         }
+
+                        // Permission help text
+                        PermissionHelpView(preferencesManager: preferencesManager)
                     }
                     .padding()
                 }
@@ -244,6 +250,126 @@ struct PreferencesView: View {
         case .tiff:
             return "Lossless quality, largest file size. Professional format."
         }
+    }
+}
+
+// MARK: - Directory Status Components
+
+struct DirectoryStatusView: View {
+    @ObservedObject var preferencesManager: PreferencesManager
+    @State private var directoryStatus: PreferencesManager.DirectoryAccessStatus = .accessible
+
+    var body: some View {
+        HStack {
+            statusIcon
+            statusText
+            Spacer()
+            if case .needsUserSelection = directoryStatus {
+                Button("Fix") {
+                    preferencesManager.selectNewDirectory()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 4)
+        .onAppear {
+            updateStatus()
+        }
+        .onChange(of: preferencesManager.screenshotSaveDirectory) { _ in
+            updateStatus()
+        }
+    }
+
+    private var statusIcon: some View {
+        Group {
+            switch directoryStatus {
+            case .accessible:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+            case .needsUserSelection:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+            case .error:
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+            }
+        }
+    }
+
+    private var statusText: some View {
+        Group {
+            switch directoryStatus {
+            case .accessible:
+                Text("Folder accessible")
+                    .foregroundColor(.green)
+            case .needsUserSelection:
+                Text("Folder permission needed")
+                    .foregroundColor(.orange)
+            case .error(let message):
+                Text("Error: \(message)")
+                    .foregroundColor(.red)
+            }
+        }
+        .font(.caption)
+    }
+
+    private func updateStatus() {
+        directoryStatus = preferencesManager.getDirectoryAccessStatus()
+    }
+}
+
+struct PermissionHelpView: View {
+    @ObservedObject var preferencesManager: PreferencesManager
+    @State private var directoryStatus: PreferencesManager.DirectoryAccessStatus = .accessible
+
+    var body: some View {
+        Group {
+            switch directoryStatus {
+            case .accessible:
+                EmptyView()
+            case .needsUserSelection:
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Permission Required")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.orange)
+
+                    Text("This folder requires permission to save screenshots. Click 'Choose Folder...' to grant access.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 4)
+            case .error(let message):
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Access Error")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.red)
+
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Click 'Reset to Default' to use a safe location.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 4)
+            }
+        }
+        .onAppear {
+            updateStatus()
+        }
+        .onChange(of: preferencesManager.screenshotSaveDirectory) { _ in
+            updateStatus()
+        }
+    }
+
+    private func updateStatus() {
+        directoryStatus = preferencesManager.getDirectoryAccessStatus()
     }
 }
 

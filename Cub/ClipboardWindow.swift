@@ -285,10 +285,9 @@ class ClipboardWindow: NSWindow {
 
             // Make window visible with proper ordering and activation
             orderFront(nil)
-            makeKeyAndOrderFront(nil)
             alphaValue = 1.0
 
-            print("📋 [WINDOW] Window made visible with orderFront and makeKeyAndOrderFront")
+            print("📋 [WINDOW] Window made visible with orderFront")
             print("📋 [WINDOW] Window frame: \(frame)")
             print("📋 [WINDOW] Window isVisible: \(isVisible)")
             print("📋 [WINDOW] Window alphaValue: \(alphaValue)")
@@ -397,6 +396,109 @@ class ClipboardWindow: NSWindow {
         showClipboard()
 
         print("✅ [UPDATE] Clipboard window updated successfully")
+    }
+
+    // MARK: - Toolbar Actions
+
+    func handleScreenshotButtonAction() {
+        print("📎 [WINDOW] Handling screenshot button action")
+
+        guard let currentImage = currentImage else {
+            print("ℹ️ [WINDOW] No current screenshot available")
+            // Show visual feedback that no screenshot is available
+            showNoScreenshotFeedback()
+            return
+        }
+
+        print("📸 [WINDOW] Current screenshot available: \(currentImage.fileName)")
+
+        // Show action menu for current screenshot
+        showScreenshotActionMenu(for: currentImage)
+    }
+
+    private func showNoScreenshotFeedback() {
+        // Subtle animation to indicate no screenshot available
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.allowsImplicitAnimation = true
+            alphaValue = 0.7
+        } completionHandler: {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.allowsImplicitAnimation = true
+                self.alphaValue = 1.0
+            }
+        }
+
+        print("💡 [WINDOW] Showing visual feedback for no screenshot")
+    }
+
+    private func showScreenshotActionMenu(for image: CapturedImage) {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        // Copy to Clipboard action
+        let copyItem = NSMenuItem(title: "Copy to Clipboard", action: #selector(copyCurrentScreenshot), keyEquivalent: "c")
+        copyItem.target = self
+        copyItem.isEnabled = true
+        menu.addItem(copyItem)
+
+        // Open in Default App action
+        let openItem = NSMenuItem(title: "Open in Default App", action: #selector(openCurrentScreenshot), keyEquivalent: "o")
+        openItem.target = self
+        openItem.isEnabled = true
+        menu.addItem(openItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Reveal in Finder action
+        let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealCurrentScreenshot), keyEquivalent: "r")
+        revealItem.target = self
+        revealItem.isEnabled = true
+        menu.addItem(revealItem)
+
+        // Show menu near the screenshot button
+        if let clipboardView = contentView as? ClipboardWindowView,
+           let toolbar = clipboardView.value(forKey: "toolbar") as? ClipboardToolbar {
+            let buttonRect = toolbar.convert(toolbar.bounds, to: nil)
+            let screenPoint = convertToScreen(buttonRect)
+            menu.popUp(positioning: nil, at: NSPoint(x: screenPoint.minX, y: screenPoint.minY), in: nil)
+        }
+
+        print("📋 [WINDOW] Screenshot action menu displayed")
+    }
+
+    @objc private func copyCurrentScreenshot() {
+        guard let currentImage = currentImage else { return }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([currentImage.image])
+
+        print("📋 [WINDOW] Screenshot copied to clipboard")
+    }
+
+    @objc private func openCurrentScreenshot() {
+        guard let currentImage = currentImage else { return }
+
+        NSWorkspace.shared.open(currentImage.filePath)
+        print("🚀 [WINDOW] Screenshot opened in default app")
+    }
+
+    @objc private func revealCurrentScreenshot() {
+        guard let currentImage = currentImage else { return }
+
+        NSWorkspace.shared.activateFileViewerSelecting([currentImage.filePath])
+        print("🔍 [WINDOW] Screenshot revealed in Finder")
+    }
+
+    func handleGalleryButtonAction() {
+        print("🖼️ [WINDOW] Handling gallery button action")
+
+        // Show the gallery window
+        GalleryWindowController.show()
+
+        print("✅ [WINDOW] Gallery window requested to show")
     }
 
     // MARK: - Window Behavior Overrides
@@ -655,6 +757,7 @@ class ClipboardWindowView: NSView {
     private var imageView: DraggableImageView!
     private var metadataLabel: NSTextField!
     private var placeholderLabel: NSTextField!
+    private var toolbar: ClipboardToolbar!
 
     // Color preferences
     private let availableColors: [NSColor] = [
@@ -675,6 +778,8 @@ class ClipboardWindowView: NSView {
     private let innerBorderWidth: CGFloat = 2.0
     private let borderSpacing: CGFloat = 8.0
     private let contentPadding: CGFloat = 16.0
+    private let toolbarHeight: CGFloat = 48.0
+    private let toolbarSpacing: CGFloat = 8.0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -698,6 +803,7 @@ class ClipboardWindowView: NSView {
         setupImageView()
         setupMetadataLabel()
         setupPlaceholderLabel()
+        setupToolbar()
         setupModernVibrancy()
         setupAccessibility()
 
@@ -824,7 +930,7 @@ class ClipboardWindowView: NSView {
             imageView.topAnchor.constraint(equalTo: topAnchor, constant: outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding),
             imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding),
             imageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -(outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding)),
-            imageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -(outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding + 40)) // Space for metadata
+            imageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -(outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding + 40 + toolbarHeight + toolbarSpacing)) // Space for metadata and toolbar
         ])
 
         print("📎 [SETUP] DraggableImageView created and configured for drag operations with accessibility")
@@ -882,6 +988,21 @@ class ClipboardWindowView: NSView {
             placeholderLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: contentPadding),
             placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -contentPadding)
         ])
+    }
+
+    private func setupToolbar() {
+        toolbar = ClipboardToolbar()
+        toolbar.delegate = self
+
+        addSubview(toolbar)
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            toolbar.centerXAnchor.constraint(equalTo: centerXAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -(outerBorderWidth + borderSpacing + innerBorderWidth + contentPadding))
+        ])
+
+        print("🔧 [SETUP] ClipboardToolbar created and positioned at bottom")
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1032,5 +1153,25 @@ class ClipboardWindowView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
+    }
+}
+
+// MARK: - ClipboardToolbarDelegate
+
+extension ClipboardWindowView: ClipboardToolbarDelegate {
+    func screenshotButtonTapped() {
+        print("📎 [TOOLBAR] Screenshot button action received")
+        // Delegate to parent window for screenshot actions
+        if let window = window as? ClipboardWindow {
+            window.handleScreenshotButtonAction()
+        }
+    }
+
+    func galleryButtonTapped() {
+        print("🖼️ [TOOLBAR] Gallery button action received")
+        // Delegate to parent window for gallery actions
+        if let window = window as? ClipboardWindow {
+            window.handleGalleryButtonAction()
+        }
     }
 }

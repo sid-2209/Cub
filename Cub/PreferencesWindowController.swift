@@ -2,7 +2,7 @@
 //  PreferencesWindowController.swift
 //  Cub
 //
-//  Created by Claude on 17/09/25.
+//  Created by sid on 17/09/25.
 //
 
 import Cocoa
