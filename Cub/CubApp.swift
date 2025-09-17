@@ -44,6 +44,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.setPermissionManager(permissionManager)
         hotkeyManager.setClipboardWindow(clipboardWindow!)
 
+        // Create shared preferences window controller
+        PreferencesWindowController.createShared(
+            permissionManager: permissionManager,
+            hotkeyManager: hotkeyManager
+        )
+        print("🪟 [APP] Preferences window controller initialized")
+
         // Trigger app launch handlers
         print("🔑 [APP] Calling permission and hotkey handleAppLaunch...")
         permissionManager.handleAppLaunch()

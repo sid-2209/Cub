@@ -112,8 +112,9 @@ struct MenuBarContentView: View {
     }
 
     private func preferencesAction() {
-        print("🖱️ Preferences clicked")
-        // TODO: Implement preferences window functionality
+        print("🖱️ [MENU] Preferences clicked")
+        PreferencesWindowController.show()
+        print("✅ [MENU] Preferences window requested to show")
     }
 }
 
