@@ -16,7 +16,9 @@ struct PreferencesView: View {
     @State private var showingDirectoryPicker = false
     @State private var selectedColorIndex = UserDefaults.standard.integer(forKey: "SelectedBorderColor")
     @State private var showMenuBarIcon = UserDefaults.standard.bool(forKey: "ShowMenuBarIcon")
-    @State private var alwaysShowClipboard = UserDefaults.standard.bool(forKey: "AlwaysShowClipboard")
+    @State private var clipboardVisibilityMode: ClipboardVisibilityMode = .show
+    @State private var autoDimmingEnabled = UserDefaults.standard.bool(forKey: "AutoDimmingEnabled")
+    @State private var autoHideEnabled = UserDefaults.standard.bool(forKey: "AutoHideEnabled")
 
     private let availableColors: [Color] = [
         .red, .blue, .green, .orange, .purple
@@ -56,18 +58,57 @@ struct PreferencesView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Toggle("Show menu bar icon", isOn: $showMenuBarIcon)
                             .help("Show or hide the Cub icon in the menu bar")
-                            .onChange(of: showMenuBarIcon) { value in
-                                UserDefaults.standard.set(value, forKey: "ShowMenuBarIcon")
-                                print("🎯 [PREFS] Menu bar icon setting: \(value)")
+                            .onChange(of: showMenuBarIcon) {
+                                UserDefaults.standard.set(showMenuBarIcon, forKey: "ShowMenuBarIcon")
+                                print("🎯 [PREFS] Menu bar icon setting: \(showMenuBarIcon)")
                             }
 
-                        Toggle("Always show clipboard window", isOn: $alwaysShowClipboard)
-                            .help("Keep the clipboard window visible at all times")
-                            .onChange(of: alwaysShowClipboard) { value in
-                                UserDefaults.standard.set(value, forKey: "AlwaysShowClipboard")
-                                ClipboardWindowManager.shared.setAlwaysVisible(value)
-                                print("📋 [PREFS] Always show clipboard: \(value)")
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Clipboard Window Mode")
+                                .font(.headline)
+
+                            Picker("Clipboard Mode", selection: $clipboardVisibilityMode) {
+                                ForEach(ClipboardVisibilityMode.allCases, id: \.self) { mode in
+                                    Text(mode.displayName).tag(mode)
+                                }
                             }
+                            .pickerStyle(SegmentedPickerStyle())
+                            .onChange(of: clipboardVisibilityMode) {
+                                UserDefaults.standard.set(clipboardVisibilityMode.rawValue, forKey: "ClipboardVisibilityMode")
+                                ClipboardWindowManager.shared.setVisibilityMode(clipboardVisibilityMode)
+                                print("📋 [PREFS] Clipboard visibility mode: \(clipboardVisibilityMode.displayName)")
+                            }
+
+                            Text(clipboardVisibilityMode.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Divider()
+
+                        Toggle("Auto-dim clipboard after 1 minute", isOn: $autoDimmingEnabled)
+                            .help("Automatically reduce clipboard window opacity after 1 minute of inactivity")
+                            .disabled(!clipboardVisibilityMode.allowsAutoDimming)
+                            .onChange(of: autoDimmingEnabled) {
+                                UserDefaults.standard.set(autoDimmingEnabled, forKey: "AutoDimmingEnabled")
+                                ClipboardWindowManager.shared.setAutoDimmingEnabled(autoDimmingEnabled)
+                                print("🌙 [PREFS] Auto-dimming enabled: \(autoDimmingEnabled)")
+                            }
+
+                        Toggle("Auto-hide clipboard after 3 minutes", isOn: $autoHideEnabled)
+                            .help("Automatically hide clipboard window after 3 minutes of inactivity")
+                            .disabled(!clipboardVisibilityMode.allowsAutoHiding)
+                            .onChange(of: autoHideEnabled) {
+                                UserDefaults.standard.set(autoHideEnabled, forKey: "AutoHideEnabled")
+                                ClipboardWindowManager.shared.setAutoHideEnabled(autoHideEnabled)
+                                print("🙈 [PREFS] Auto-hide enabled: \(autoHideEnabled)")
+                            }
+
+                        if !clipboardVisibilityMode.allowsAutoHiding {
+                            Text("Auto-hide is only available in 'Show' mode")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .padding()
                 }
@@ -168,8 +209,8 @@ struct PreferencesView: View {
                             }
                         }
                         .pickerStyle(SegmentedPickerStyle())
-                        .onChange(of: preferencesManager.screenshotFormat) { newFormat in
-                            preferencesManager.updateScreenshotFormat(newFormat)
+                        .onChange(of: preferencesManager.screenshotFormat) {
+                            preferencesManager.updateScreenshotFormat(preferencesManager.screenshotFormat)
                         }
 
                         Text(formatDescription(for: preferencesManager.screenshotFormat))
@@ -238,7 +279,39 @@ struct PreferencesView: View {
     private func loadSettings() {
         selectedColorIndex = UserDefaults.standard.integer(forKey: "SelectedBorderColor")
         showMenuBarIcon = UserDefaults.standard.bool(forKey: "ShowMenuBarIcon")
-        alwaysShowClipboard = UserDefaults.standard.bool(forKey: "AlwaysShowClipboard")
+
+        // Load clipboard visibility mode with migration
+        loadClipboardVisibilityMode()
+
+        autoDimmingEnabled = UserDefaults.standard.bool(forKey: "AutoDimmingEnabled")
+        autoHideEnabled = UserDefaults.standard.bool(forKey: "AutoHideEnabled")
+
+        // Set defaults if first launch
+        if UserDefaults.standard.object(forKey: "AutoDimmingEnabled") == nil {
+            autoDimmingEnabled = true
+            autoHideEnabled = true
+            UserDefaults.standard.set(true, forKey: "AutoDimmingEnabled")
+            UserDefaults.standard.set(true, forKey: "AutoHideEnabled")
+        }
+    }
+
+    private func loadClipboardVisibilityMode() {
+        // Check if we have the new preference
+        if let modeString = UserDefaults.standard.string(forKey: "ClipboardVisibilityMode"),
+           let mode = ClipboardVisibilityMode(rawValue: modeString) {
+            clipboardVisibilityMode = mode
+            print("📋 [PREFS] Loaded clipboard visibility mode: \(mode.displayName)")
+        } else {
+            // Migration from old boolean preference
+            let legacyAlwaysShow = UserDefaults.standard.bool(forKey: "AlwaysShowClipboard")
+            clipboardVisibilityMode = ClipboardVisibilityMode.fromLegacyPreference(alwaysShow: legacyAlwaysShow)
+
+            // Save new preference and remove old one
+            UserDefaults.standard.set(clipboardVisibilityMode.rawValue, forKey: "ClipboardVisibilityMode")
+            UserDefaults.standard.removeObject(forKey: "AlwaysShowClipboard")
+
+            print("📋 [PREFS] Migrated from legacy preference to: \(clipboardVisibilityMode.displayName)")
+        }
     }
 
     private func formatDescription(for format: PreferencesManager.ScreenshotFormat) -> String {
@@ -275,7 +348,7 @@ struct DirectoryStatusView: View {
         .onAppear {
             updateStatus()
         }
-        .onChange(of: preferencesManager.screenshotSaveDirectory) { _ in
+        .onChange(of: preferencesManager.screenshotSaveDirectory) {
             updateStatus()
         }
     }
@@ -363,7 +436,7 @@ struct PermissionHelpView: View {
         .onAppear {
             updateStatus()
         }
-        .onChange(of: preferencesManager.screenshotSaveDirectory) { _ in
+        .onChange(of: preferencesManager.screenshotSaveDirectory) {
             updateStatus()
         }
     }

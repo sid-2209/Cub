@@ -62,8 +62,14 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            // App Actions
+            // Clipboard Window Mode Actions
             Group {
+                Button("Show") {
+                    showAction()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+
                 Button("Always Show") {
                     alwaysShowAction()
                 }
@@ -97,18 +103,25 @@ struct MenuBarContentView: View {
         .frame(minWidth: 280)
     }
 
+    private func showAction() {
+        print("🖱️ [MENU] Show clicked")
+        print("🔄 [MENU] Setting clipboard visibility mode to Show...")
+        ClipboardWindowManager.shared.setVisibilityMode(.show)
+        print("✅ [MENU] Set visibility mode to Show")
+    }
+
     private func alwaysShowAction() {
         print("🖱️ [MENU] Always Show clicked")
-        print("🔄 [MENU] Calling ClipboardWindowManager.shared.setAlwaysVisible(true)...")
-        ClipboardWindowManager.shared.setAlwaysVisible(true)
-        print("✅ [MENU] Called setAlwaysVisible(true) via shared manager")
+        print("🔄 [MENU] Setting clipboard visibility mode to Always Show...")
+        ClipboardWindowManager.shared.setVisibilityMode(.alwaysShow)
+        print("✅ [MENU] Set visibility mode to Always Show")
     }
 
     private func hideAction() {
         print("🖱️ [MENU] Hide clicked")
-        print("🔄 [MENU] Calling ClipboardWindowManager.shared.hideClipboard()...")
-        ClipboardWindowManager.shared.hideClipboard()
-        print("✅ [MENU] Called hideClipboard() via shared manager")
+        print("🔄 [MENU] Setting clipboard visibility mode to Hidden...")
+        ClipboardWindowManager.shared.setVisibilityMode(.hidden)
+        print("✅ [MENU] Set visibility mode to Hidden")
     }
 
     private func preferencesAction() {

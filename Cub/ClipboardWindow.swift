@@ -11,6 +11,7 @@ import SwiftUI
 enum ClipboardWindowState {
     case hidden
     case visible
+    case dimmed
     case alwaysVisible
 }
 
@@ -33,6 +34,13 @@ class ClipboardWindow: NSWindow {
     // Current displayed image
     private var currentImage: CapturedImage?
 
+    // Auto-dimming and activity tracking
+    private var activityTracker: ActivityTracker!
+    private var wasAutoHidden: Bool = false
+    private var isDimmingEnabled: Bool = true
+    private var isAutoHideEnabled: Bool = true
+    private var visibilityMode: ClipboardVisibilityMode = .show
+
     init() {
         // Calculate initial position
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
@@ -52,6 +60,7 @@ class ClipboardWindow: NSWindow {
 
         setupWindow()
         setupClipboardView()
+        setupActivityTracker()
         loadWindowState()
     }
 
@@ -157,6 +166,44 @@ class ClipboardWindow: NSWindow {
         print("📋 ClipboardView setup with constraints")
     }
 
+    private func setupActivityTracker() {
+        activityTracker = ActivityTracker()
+        activityTracker.delegate = self
+
+        // Load visibility mode
+        loadVisibilityMode()
+
+        // Load user preferences
+        isDimmingEnabled = UserDefaults.standard.bool(forKey: "AutoDimmingEnabled")
+        isAutoHideEnabled = UserDefaults.standard.bool(forKey: "AutoHideEnabled")
+
+        // Set defaults if first launch
+        if UserDefaults.standard.object(forKey: "AutoDimmingEnabled") == nil {
+            isDimmingEnabled = true
+            isAutoHideEnabled = true
+            UserDefaults.standard.set(true, forKey: "AutoDimmingEnabled")
+            UserDefaults.standard.set(true, forKey: "AutoHideEnabled")
+        }
+
+        print("📋 [ACTIVITY] Activity tracker setup completed")
+        print("📋 [ACTIVITY] Visibility mode: \(visibilityMode.displayName)")
+        print("📋 [ACTIVITY] Auto-dimming enabled: \(isDimmingEnabled)")
+        print("📋 [ACTIVITY] Auto-hide enabled: \(isAutoHideEnabled)")
+    }
+
+    private func loadVisibilityMode() {
+        // Load visibility mode with migration support
+        if let modeString = UserDefaults.standard.string(forKey: "ClipboardVisibilityMode"),
+           let mode = ClipboardVisibilityMode(rawValue: modeString) {
+            visibilityMode = mode
+        } else {
+            // Migration from old boolean preference
+            let legacyAlwaysShow = UserDefaults.standard.bool(forKey: "AlwaysShowClipboard")
+            visibilityMode = ClipboardVisibilityMode.fromLegacyPreference(alwaysShow: legacyAlwaysShow)
+            UserDefaults.standard.set(visibilityMode.rawValue, forKey: "ClipboardVisibilityMode")
+        }
+    }
+
     private func positionWindowAtRightEdge() {
         print("📍 [POSITION] Starting window positioning...")
 
@@ -221,10 +268,98 @@ class ClipboardWindow: NSWindow {
         }
     }
 
+    // MARK: - Auto-Dimming Animation Methods
+
+    private func dimWindow() {
+        guard isDimmingEnabled && visibilityMode.allowsAutoDimming else { return }
+        guard windowState == .visible || windowState == .alwaysVisible else { return }
+
+        print("🌙 [DIMMING] Dimming window to 50% opacity")
+        let previousState = windowState
+        windowState = .dimmed
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.4
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().alphaValue = 0.5
+        }
+
+        saveWindowState()
+        print("✅ [DIMMING] Window dimmed successfully (was \(previousState.rawValue))")
+    }
+
+    private func undimWindow() {
+        guard windowState == .dimmed else { return }
+
+        print("☀️ [DIMMING] Undimming window to full opacity")
+
+        // Restore to the appropriate visible state based on visibility mode
+        windowState = visibilityMode == .alwaysShow ? .alwaysVisible : .visible
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.3
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 1.0
+        }
+
+        saveWindowState()
+        print("✅ [DIMMING] Window undimmed successfully (restored to \(windowState.rawValue))")
+    }
+
+    private func autoHideWindow() {
+        guard isAutoHideEnabled && visibilityMode.allowsAutoHiding else { return }
+        guard windowState == .visible || windowState == .dimmed else { return }
+
+        print("🙈 [AUTO-HIDE] Auto-hiding window (mode: \(visibilityMode.displayName))")
+        wasAutoHidden = true
+        windowState = .hidden
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.5
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            animator().alphaValue = 0.0
+        }) {
+            self.orderOut(nil)
+        }
+
+        saveWindowState()
+        clipboardDelegate?.clipboardWindowVisibilityChanged(false)
+        print("✅ [AUTO-HIDE] Window auto-hidden successfully")
+    }
+
+    private func revealFromAutoHide() {
+        guard wasAutoHidden else { return }
+
+        print("👁️ [AUTO-HIDE] Revealing window from auto-hide")
+        wasAutoHidden = false
+        windowState = .visible
+
+        positionWindowAtRightEdge()
+        orderFront(nil)
+        alphaValue = 0.0
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.4
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 1.0
+        }
+
+        saveWindowState()
+        clipboardDelegate?.clipboardWindowVisibilityChanged(true)
+        print("✅ [AUTO-HIDE] Window revealed with animation")
+    }
+
     // MARK: - Public Methods
 
     func showClipboard() {
         print("📋 [WINDOW] showClipboard() called - current state: \(windowState)")
+
+        // Handle auto-hidden window revival
+        if wasAutoHidden {
+            revealFromAutoHide()
+            startActivityTracking()
+            return
+        }
 
         // Don't show if already visible, but allow alwaysVisible to show again
         guard windowState == .hidden else {
@@ -248,6 +383,7 @@ class ClipboardWindow: NSWindow {
 
         saveWindowState()
         clipboardDelegate?.clipboardWindowVisibilityChanged(true)
+        startActivityTracking()
         print("📋 [WINDOW] Clipboard window shown with animation")
     }
 
@@ -255,6 +391,8 @@ class ClipboardWindow: NSWindow {
         guard windowState != .hidden else { return }
 
         windowState = .hidden
+        wasAutoHidden = false
+        stopActivityTracking()
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
@@ -338,6 +476,10 @@ class ClipboardWindow: NSWindow {
             windowState = .visible
             print("📋 Setting initial state to visible, showing clipboard")
             showClipboard()
+        case "dimmed":
+            windowState = .visible
+            print("📋 Setting initial state to visible (was dimmed), showing clipboard")
+            showClipboard()
         case "alwaysVisible":
             windowState = .alwaysVisible
             print("📋 Setting initial state to alwaysVisible, showing clipboard")
@@ -351,6 +493,8 @@ class ClipboardWindow: NSWindow {
     // MARK: - Window Events
 
     override func mouseDown(with event: NSEvent) {
+        // Reset activity tracking
+        activityTracker.resetActivity()
         // Allow window to be dragged
         performDrag(with: event)
     }
@@ -369,6 +513,14 @@ class ClipboardWindow: NSWindow {
 
     var hasImage: Bool {
         return currentImage != nil
+    }
+
+    var isAutoHidden: Bool {
+        return wasAutoHidden
+    }
+
+    var currentWindowState: ClipboardWindowState {
+        return windowState
     }
 
     // MARK: - Window Access for Screenshot Exclusion
@@ -519,6 +671,110 @@ class ClipboardWindow: NSWindow {
         print("💡 [WINDOW] Chat placeholder feedback shown")
     }
 
+    private func forceShowWindow() {
+        print("📋 [WINDOW] forceShowWindow() called - forcing window to appear")
+
+        positionWindowAtRightEdge()
+        orderFront(nil)
+        alphaValue = 0.0
+
+        print("📋 [WINDOW] Starting fade-in animation...")
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.3
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 1.0
+        }
+
+        saveWindowState()
+        clipboardDelegate?.clipboardWindowVisibilityChanged(true)
+        print("✅ [WINDOW] Window forced to show with animation")
+    }
+
+    // MARK: - Activity Tracking Methods
+
+    private func startActivityTracking() {
+        // Only start tracking if the mode supports it and window is not hidden
+        guard visibilityMode != .hidden && windowState != .hidden else { return }
+        guard (isDimmingEnabled && visibilityMode.allowsAutoDimming) ||
+              (isAutoHideEnabled && visibilityMode.allowsAutoHiding) else { return }
+
+        activityTracker.startTracking()
+        print("🔍 [ACTIVITY] Started activity tracking for window (mode: \(visibilityMode.displayName))")
+    }
+
+    private func stopActivityTracking() {
+        activityTracker.stopTracking()
+        print("🔍 [ACTIVITY] Stopped activity tracking for window")
+    }
+
+    func setAutoDimmingEnabled(_ enabled: Bool) {
+        isDimmingEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "AutoDimmingEnabled")
+
+        if !enabled && windowState == .dimmed {
+            undimWindow()
+        }
+
+        print("📋 [SETTINGS] Auto-dimming enabled: \(enabled)")
+    }
+
+    func setAutoHideEnabled(_ enabled: Bool) {
+        isAutoHideEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "AutoHideEnabled")
+
+        print("📋 [SETTINGS] Auto-hide enabled: \(enabled)")
+    }
+
+    func setVisibilityMode(_ mode: ClipboardVisibilityMode) {
+        print("📋 [SETTINGS] Setting visibility mode to: \(mode.displayName)")
+
+        let previousMode = visibilityMode
+        visibilityMode = mode
+
+        UserDefaults.standard.set(mode.rawValue, forKey: "ClipboardVisibilityMode")
+
+        // Handle state transitions based on the new mode
+        switch mode {
+        case .hidden:
+            hideClipboard()
+            stopActivityTracking()
+
+        case .show:
+            // Normal mode - allow both dimming and auto-hiding
+            if previousMode == .hidden {
+                // Show the window when switching from hidden to show
+                windowState = .visible
+                forceShowWindow()
+                print("📋 [SETTINGS] Switched to show mode - displaying window")
+            } else if previousMode == .alwaysShow {
+                // Transition from always visible to normal - keep window visible but update state
+                windowState = .visible
+                if !isVisible {
+                    forceShowWindow()
+                }
+                startActivityTracking()
+                print("📋 [SETTINGS] Switched from Always Show to Show mode")
+            } else {
+                // For any other transition to show mode, ensure window is visible
+                windowState = .visible
+                if !isVisible {
+                    forceShowWindow()
+                }
+                startActivityTracking()
+                print("📋 [SETTINGS] Switched to Show mode - ensuring window is visible")
+            }
+
+        case .alwaysShow:
+            // Always visible mode - allow dimming but no auto-hiding
+            windowState = .alwaysVisible
+            orderFront(nil)
+            alphaValue = 1.0
+            startActivityTracking()
+        }
+
+        print("📋 [SETTINGS] Visibility mode updated from \(previousMode.displayName) to \(mode.displayName)")
+    }
+
     func handleGalleryButtonAction() {
         print("🖼️ [WINDOW] Handling gallery button action")
 
@@ -537,6 +793,50 @@ class ClipboardWindow: NSWindow {
     override var canBecomeMain: Bool {
         return false
     }
+
+    // MARK: - Window Event Overrides for Activity Tracking
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        activityTracker.resetActivity()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        super.keyDown(with: event)
+        activityTracker.resetActivity()
+    }
+}
+
+// MARK: - ActivityTrackerDelegate
+
+extension ClipboardWindow: ActivityTrackerDelegate {
+    func userActivityDetected() {
+        print("🔄 [ACTIVITY] User activity detected")
+
+        // Undim window if currently dimmed
+        if windowState == .dimmed {
+            undimWindow()
+        }
+    }
+
+    func inactivityPeriodReached(_ duration: TimeInterval) {
+        print("⏰ [ACTIVITY] Inactivity period reached: \(duration) seconds (mode: \(visibilityMode.displayName))")
+
+        switch duration {
+        case 60.0: // 1 minute - dim window
+            if (windowState == .visible || windowState == .alwaysVisible) &&
+               isDimmingEnabled && visibilityMode.allowsAutoDimming {
+                dimWindow()
+            }
+        case 180.0: // 3 minutes - auto-hide window
+            if (windowState == .visible || windowState == .dimmed) &&
+               isAutoHideEnabled && visibilityMode.allowsAutoHiding {
+                autoHideWindow()
+            }
+        default:
+            break
+        }
+    }
 }
 
 // MARK: - ClipboardWindowState Extension
@@ -546,6 +846,7 @@ extension ClipboardWindowState {
         switch self {
         case .hidden: return "hidden"
         case .visible: return "visible"
+        case .dimmed: return "dimmed"
         case .alwaysVisible: return "alwaysVisible"
         }
     }

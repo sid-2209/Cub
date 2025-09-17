@@ -224,10 +224,23 @@ class HotkeyManager: ObservableObject {
         print("🔥 [HOTKEY] Global hotkey ⌘E triggered!")
         print("🔍 [HOTKEY] ClipboardWindow availability: \(clipboardWindow != nil ? "✅ Available" : "❌ Nil")")
 
-        // Immediately show selection detected in clipboard window
-        print("🔄 [HOTKEY] Calling clipboardWindow.showSelectionDetected()...")
-        clipboardWindow?.showSelectionDetected()
-        print("✅ [HOTKEY] Called clipboardWindow.showSelectionDetected()")
+        // Reset activity tracking and reveal window if auto-hidden
+        if let clipboardWindow = clipboardWindow {
+            // Check if window was auto-hidden and reveal it with animation
+            if clipboardWindow.currentWindowState == .hidden && clipboardWindow.isAutoHidden {
+                print("👁️ [HOTKEY] Revealing auto-hidden window")
+                clipboardWindow.showClipboard()
+                // Brief delay to allow reveal animation before showing selection
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    clipboardWindow.showSelectionDetected()
+                }
+            } else {
+                // Immediately show selection detected in clipboard window
+                print("🔄 [HOTKEY] Calling clipboardWindow.showSelectionDetected()...")
+                clipboardWindow.showSelectionDetected()
+                print("✅ [HOTKEY] Called clipboardWindow.showSelectionDetected()")
+            }
+        }
 
         // Check if we have screen recording permissions
         guard let permissionManager = permissionManager else {

@@ -42,4 +42,19 @@ class ClipboardWindowManager {
     func getClipboardWindow() -> ClipboardWindow? {
         return clipboardWindow
     }
+
+    func setAutoDimmingEnabled(_ enabled: Bool) {
+        print("📋 [MANAGER] setAutoDimmingEnabled(\(enabled)) called")
+        clipboardWindow?.setAutoDimmingEnabled(enabled)
+    }
+
+    func setAutoHideEnabled(_ enabled: Bool) {
+        print("📋 [MANAGER] setAutoHideEnabled(\(enabled)) called")
+        clipboardWindow?.setAutoHideEnabled(enabled)
+    }
+
+    func setVisibilityMode(_ mode: ClipboardVisibilityMode) {
+        print("📋 [MANAGER] setVisibilityMode(\(mode.displayName)) called")
+        clipboardWindow?.setVisibilityMode(mode)
+    }
 }
