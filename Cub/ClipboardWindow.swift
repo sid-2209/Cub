@@ -372,6 +372,12 @@ class ClipboardWindow: NSWindow {
         return currentImage != nil
     }
 
+    // MARK: - Window Access for Screenshot Exclusion
+
+    func getNSWindow() -> NSWindow {
+        return self
+    }
+
     // MARK: - Screenshot Update
 
     func updateWithCapturedImage(_ capturedImage: CapturedImage) {

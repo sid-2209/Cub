@@ -78,6 +78,7 @@ class ScreenshotCapture: NSObject, ObservableObject {
     weak var delegate: ScreenshotCaptureDelegate?
 
     private weak var permissionManager: PermissionManager?
+    private weak var clipboardWindow: ClipboardWindow?
 
     @Published var isCapturing: Bool = false
     @Published var lastCapturedImage: CapturedImage?
@@ -89,6 +90,11 @@ class ScreenshotCapture: NSObject, ObservableObject {
 
     func setPermissionManager(_ manager: PermissionManager) {
         self.permissionManager = manager
+    }
+
+    func setClipboardWindow(_ window: ClipboardWindow) {
+        self.clipboardWindow = window
+        print("📋 [CAPTURE] Clipboard window reference set for screenshot exclusion")
     }
 
     // MARK: - Public Capture Methods
@@ -407,8 +413,20 @@ class ScreenshotCapture: NSObject, ObservableObject {
                 print("   Scale factor: \(scaleFactor)x")
                 print("   Source rect: \(config.sourceRect)")
 
-                // Create filter
-                let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+                // Create filter with clipboard window exclusion
+                var excludedWindows: [SCWindow] = []
+                if let clipboardWindow = clipboardWindow {
+                    // Find the SCWindow that corresponds to our clipboard window
+                    if let scWindow = content.windows.first(where: { window in
+                        return window.windowID == CGWindowID(clipboardWindow.windowNumber)
+                    }) {
+                        excludedWindows.append(scWindow)
+                        print("📋 [CAPTURE] Clipboard window added to exclusion list (ID: \(scWindow.windowID))")
+                    } else {
+                        print("⚠️ [CAPTURE] Could not find clipboard window in shareable content")
+                    }
+                }
+                let filter = SCContentFilter(display: scDisplay, excludingWindows: excludedWindows)
 
                 // Use SCScreenshotManager for highest quality
                 let cgImage = try await SCScreenshotManager.captureImage(
@@ -492,8 +510,20 @@ class ScreenshotCapture: NSObject, ObservableObject {
                 print("   Expected pixel ratio: \(Double(config.width) / rect.width)x scaling")
                 print("   Quality improvement vs Apple: \(config.width == Int(rect.width * scaleFactor) ? "✅ Matching" : "⚠️ Different")")
 
-                // Create filter with the specific display
-                let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+                // Create filter with clipboard window exclusion
+                var excludedWindows: [SCWindow] = []
+                if let clipboardWindow = clipboardWindow {
+                    // Find the SCWindow that corresponds to our clipboard window
+                    if let scWindow = content.windows.first(where: { window in
+                        return window.windowID == CGWindowID(clipboardWindow.windowNumber)
+                    }) {
+                        excludedWindows.append(scWindow)
+                        print("📋 [CAPTURE] Clipboard window added to exclusion list (ID: \(scWindow.windowID))")
+                    } else {
+                        print("⚠️ [CAPTURE] Could not find clipboard window in shareable content")
+                    }
+                }
+                let filter = SCContentFilter(display: scDisplay, excludingWindows: excludedWindows)
 
                 // Capture the screenshot
                 let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)

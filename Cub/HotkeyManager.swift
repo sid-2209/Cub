@@ -91,6 +91,7 @@ class HotkeyManager: ObservableObject {
 
     func setClipboardWindow(_ window: ClipboardWindow) {
         self.clipboardWindow = window
+        screenshotCapture.setClipboardWindow(window)
     }
 
     func registerHotkey() {
