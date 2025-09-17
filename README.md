@@ -7,6 +7,15 @@ A lightweight macOS screenshot utility with drag-and-drop clipboard management.
 
 ---
 
+## Demo
+CLick to watch the current work-in-progress demo:
+
+<a href="assets/Cub_Demo1_720p.mov">
+  <img src="assets/Cub_Thumbnail.png" alt="Click to watch Demo" width="600">
+</a>
+
+---
+
 ## What it does
 
 Cub is a simple yet powerful screenshot tool that enhances your macOS workflow:
