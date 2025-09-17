@@ -10,6 +10,7 @@ import SwiftUI
 
 protocol ClipboardToolbarDelegate: AnyObject {
     func screenshotButtonTapped()
+    func chatButtonTapped()
     func galleryButtonTapped()
 }
 
@@ -17,6 +18,7 @@ class ClipboardToolbar: NSView {
     weak var delegate: ClipboardToolbarDelegate?
 
     private var screenshotButton: NSButton!
+    private var chatButton: NSButton!
     private var galleryButton: NSButton!
     private var visualEffectView: NSVisualEffectView!
 
@@ -89,6 +91,14 @@ class ClipboardToolbar: NSView {
             action: #selector(screenshotButtonAction)
         )
 
+        // Chat button with message bubble SF Symbol
+        chatButton = createToolbarButton(
+            systemImage: "message",
+            accessibilityLabel: "Chat",
+            accessibilityHelp: "Open chat interface to discuss screenshots",
+            action: #selector(chatButtonAction)
+        )
+
         // Gallery button with photo grid SF Symbol
         galleryButton = createToolbarButton(
             systemImage: "photo.on.rectangle.angled",
@@ -98,9 +108,10 @@ class ClipboardToolbar: NSView {
         )
 
         addSubview(screenshotButton)
+        addSubview(chatButton)
         addSubview(galleryButton)
 
-        print("📷 [TOOLBAR] Screenshot and Gallery buttons created")
+        print("📷 [TOOLBAR] Screenshot, Chat, and Gallery buttons created")
     }
 
     private func createToolbarButton(
@@ -148,10 +159,11 @@ class ClipboardToolbar: NSView {
 
     private func setupConstraints() {
         screenshotButton.translatesAutoresizingMaskIntoConstraints = false
+        chatButton.translatesAutoresizingMaskIntoConstraints = false
         galleryButton.translatesAutoresizingMaskIntoConstraints = false
 
-        // Calculate total width needed for proper sizing
-        let totalWidth = horizontalPadding * 2 + buttonSize * 2 + buttonSpacing
+        // Calculate total width needed for proper sizing (3 buttons now)
+        let totalWidth = horizontalPadding * 2 + buttonSize * 3 + buttonSpacing * 2
         let totalHeight = verticalPadding * 2 + buttonSize
 
         // Set intrinsic content size
@@ -167,13 +179,17 @@ class ClipboardToolbar: NSView {
             screenshotButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: horizontalPadding),
             screenshotButton.centerYAnchor.constraint(equalTo: centerYAnchor),
 
+            // Chat button (middle)
+            chatButton.leadingAnchor.constraint(equalTo: screenshotButton.trailingAnchor, constant: buttonSpacing),
+            chatButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+
             // Gallery button (right)
-            galleryButton.leadingAnchor.constraint(equalTo: screenshotButton.trailingAnchor, constant: buttonSpacing),
+            galleryButton.leadingAnchor.constraint(equalTo: chatButton.trailingAnchor, constant: buttonSpacing),
             galleryButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             galleryButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -horizontalPadding)
         ])
 
-        print("📐 [TOOLBAR] Constraints configured for buttons layout")
+        print("📐 [TOOLBAR] Constraints configured for three-button layout")
     }
 
     private func setupAccessibility() {
@@ -194,6 +210,14 @@ class ClipboardToolbar: NSView {
 
         // Visual feedback
         animateButtonPress(screenshotButton)
+    }
+
+    @objc private func chatButtonAction() {
+        print("💬 [TOOLBAR] Chat button tapped")
+        delegate?.chatButtonTapped()
+
+        // Visual feedback
+        animateButtonPress(chatButton)
     }
 
     @objc private func galleryButtonAction() {
@@ -235,6 +259,7 @@ class ClipboardToolbar: NSView {
             let buttonColor = isDarkMode ? NSColor.controlAccentColor.withAlphaComponent(0.1) : NSColor.controlBackgroundColor.withAlphaComponent(0.1)
 
             screenshotButton.layer?.backgroundColor = buttonColor.cgColor
+            chatButton.layer?.backgroundColor = buttonColor.cgColor
             galleryButton.layer?.backgroundColor = buttonColor.cgColor
 
             print("🎨 [TOOLBAR] Appearance updated for \(isDarkMode ? "dark" : "light") mode")
@@ -246,6 +271,11 @@ class ClipboardToolbar: NSView {
     func setScreenshotButtonEnabled(_ enabled: Bool) {
         screenshotButton.isEnabled = enabled
         screenshotButton.alphaValue = enabled ? 1.0 : 0.5
+    }
+
+    func setChatButtonEnabled(_ enabled: Bool) {
+        chatButton.isEnabled = enabled
+        chatButton.alphaValue = enabled ? 1.0 : 0.5
     }
 
     func setGalleryButtonEnabled(_ enabled: Bool) {

@@ -492,6 +492,33 @@ class ClipboardWindow: NSWindow {
         print("🔍 [WINDOW] Screenshot revealed in Finder")
     }
 
+    func handleChatButtonAction() {
+        print("💬 [WINDOW] Handling chat button action")
+
+        // TODO: Implement chat functionality
+        // For now, show a placeholder action
+        showChatPlaceholder()
+
+        print("✅ [WINDOW] Chat action completed")
+    }
+
+    private func showChatPlaceholder() {
+        // Subtle animation to indicate chat feature is not yet implemented
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.allowsImplicitAnimation = true
+            alphaValue = 0.8
+        } completionHandler: {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                context.allowsImplicitAnimation = true
+                self.alphaValue = 1.0
+            }
+        }
+
+        print("💡 [WINDOW] Chat placeholder feedback shown")
+    }
+
     func handleGalleryButtonAction() {
         print("🖼️ [WINDOW] Handling gallery button action")
 
@@ -1164,6 +1191,14 @@ extension ClipboardWindowView: ClipboardToolbarDelegate {
         // Delegate to parent window for screenshot actions
         if let window = window as? ClipboardWindow {
             window.handleScreenshotButtonAction()
+        }
+    }
+
+    func chatButtonTapped() {
+        print("💬 [TOOLBAR] Chat button action received")
+        // Delegate to parent window for chat actions
+        if let window = window as? ClipboardWindow {
+            window.handleChatButtonAction()
         }
     }
 
