@@ -84,27 +84,6 @@ class LaunchAtLoginManager: ObservableObject {
         }
     }
 
-    @available(macOS 13.0, *)
-    func checkModernStatus() -> Bool {
-        let status = SMAppService.mainApp.status
-        print("🔍 [LAUNCH] Modern API status: \(status)")
-
-        switch status {
-        case .enabled:
-            return true
-        case .requiresApproval:
-            print("⚠️ [LAUNCH] Launch at login requires user approval")
-            return false
-        case .notRegistered:
-            return false
-        case .notFound:
-            print("❌ [LAUNCH] App service not found")
-            return false
-        @unknown default:
-            print("❓ [LAUNCH] Unknown status: \(status)")
-            return false
-        }
-    }
 
     // MARK: - Public API
 

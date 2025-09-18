@@ -744,4 +744,18 @@ extension ScreenshotDataManager {
             print("❌ [DATA] Failed to batch move screenshots: \(error)")
         }
     }
+
+    // MARK: - File System Management
+
+    func updateScreenshotPath(for screenshot: Screenshot, newPath: URL) {
+        screenshot.filePath = newPath
+        screenshot.fileName = newPath.lastPathComponent
+
+        do {
+            try context.save()
+            print("📂 [DATA] Updated screenshot path: \(newPath.lastPathComponent)")
+        } catch {
+            print("❌ [DATA] Failed to update screenshot path: \(error)")
+        }
+    }
 }
