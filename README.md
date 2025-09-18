@@ -1,4 +1,4 @@
-# Cub – Professional Screenshot Management
+# Cub
 
 Cub (Clip Utility Board) is a streamlined clipboard utility for macOS that stays pinned to your screen. With a quick ⌘E shortcut, simply drag to select an area, and Cub instantly captures and stores the screenshot in its clipboard window. It also provides robust organization and filtering tools to keep your captures neatly managed.
 
