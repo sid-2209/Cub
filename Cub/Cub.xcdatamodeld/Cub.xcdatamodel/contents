@@ -1,9 +1,49 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="false" userDefinedModelVersionIdentifier="">
-    <entity name="Item" representedClassName="Item" syncable="YES" codeGenerationType="class">
-        <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-    </entity>
-    <elements>
-        <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
-    </elements>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22758" systemVersion="23G93" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+  <entity name="Item" representedClassName="Item" syncable="YES" codeGenerationType="class">
+    <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+  </entity>
+  <entity name="Screenshot" representedClassName="Screenshot" syncable="YES" codeGenerationType="class">
+    <attribute name="captureDate" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+    <attribute name="contentType" optional="NO" attributeType="String" defaultValueString="unknown"/>
+    <attribute name="fileName" optional="NO" attributeType="String"/>
+    <attribute name="filePath" optional="NO" attributeType="URI" usesScalarValueType="NO"/>
+    <attribute name="fileSize" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+    <attribute name="height" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+    <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+    <attribute name="isMarkedDeleted" optional="NO" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+    <attribute name="lastAccessDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+    <attribute name="notes" optional="YES" attributeType="String"/>
+    <attribute name="sourceAppBundleID" optional="YES" attributeType="String"/>
+    <attribute name="sourceAppIcon" optional="YES" attributeType="Binary"/>
+    <attribute name="sourceAppName" optional="YES" attributeType="String"/>
+    <attribute name="width" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+    <relationship name="category" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Category" inverseName="screenshots" inverseEntity="Category"/>
+    <relationship name="tags" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Tag" inverseName="screenshots" inverseEntity="Tag"/>
+  </entity>
+  <entity name="Category" representedClassName="Category" syncable="YES" codeGenerationType="class">
+    <attribute name="colorHex" optional="YES" attributeType="String"/>
+    <attribute name="createdDate" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+    <attribute name="iconName" optional="YES" attributeType="String"/>
+    <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+    <attribute name="isSystemCategory" optional="NO" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+    <attribute name="name" optional="NO" attributeType="String"/>
+    <attribute name="sortOrder" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+    <attribute name="type" optional="NO" attributeType="String"/>
+    <relationship name="screenshots" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Screenshot" inverseName="category" inverseEntity="Screenshot"/>
+  </entity>
+  <entity name="Tag" representedClassName="Tag" syncable="YES" codeGenerationType="class">
+    <attribute name="colorHex" optional="YES" attributeType="String"/>
+    <attribute name="createdDate" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+    <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+    <attribute name="name" optional="NO" attributeType="String"/>
+    <attribute name="usageCount" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+    <relationship name="screenshots" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Screenshot" inverseName="tags" inverseEntity="Screenshot"/>
+  </entity>
+  <elements>
+    <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
+    <element name="Screenshot" positionX="160" positionY="-18" width="128" height="284"/>
+    <element name="Category" positionX="340" positionY="-18" width="128" height="164"/>
+    <element name="Tag" positionX="520" positionY="-18" width="128" height="104"/>
+  </elements>
 </model>

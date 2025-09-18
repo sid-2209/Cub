@@ -53,27 +53,47 @@ class SettingsStore: ObservableObject {
 
     var clipboardMode: ClipboardVisibilityMode {
         get { ClipboardVisibilityMode(rawValue: clipboardVisibilityMode) ?? .show }
-        set { clipboardVisibilityMode = newValue.rawValue }
+        set {
+            DispatchQueue.main.async {
+                self.clipboardVisibilityMode = newValue.rawValue
+            }
+        }
     }
 
     var screenshotFormatEnum: ScreenshotFormat {
         get { ScreenshotFormat(rawValue: screenshotFormat) ?? .png }
-        set { screenshotFormat = newValue.rawValue }
+        set {
+            DispatchQueue.main.async {
+                self.screenshotFormat = newValue.rawValue
+            }
+        }
     }
 
     var windowPositionEnum: WindowPosition {
         get { WindowPosition(rawValue: windowPosition) ?? .right }
-        set { windowPosition = newValue.rawValue }
+        set {
+            DispatchQueue.main.async {
+                self.windowPosition = newValue.rawValue
+            }
+        }
     }
 
     var appearanceModeEnum: AppearanceMode {
         get { AppearanceMode(rawValue: appearanceMode) ?? .auto }
-        set { appearanceMode = newValue.rawValue }
+        set {
+            DispatchQueue.main.async {
+                self.appearanceMode = newValue.rawValue
+            }
+        }
     }
 
     var animationSpeedEnum: AnimationSpeed {
         get { AnimationSpeed(rawValue: animationSpeed) ?? .normal }
-        set { animationSpeed = newValue.rawValue }
+        set {
+            DispatchQueue.main.async {
+                self.animationSpeed = newValue.rawValue
+            }
+        }
     }
 
     // MARK: - Migration from UserDefaults

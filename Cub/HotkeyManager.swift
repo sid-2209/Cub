@@ -434,6 +434,9 @@ extension HotkeyManager: ScreenshotCaptureDelegate {
         print("📅 [DELEGATE] Capture date: \(capturedImage.captureDate)")
         print("🔍 [DELEGATE] ClipboardWindow: \(clipboardWindow != nil ? "✅ Available" : "❌ Nil")")
 
+        // Detect app source for smart organization
+        detectAndSaveAppSource(for: capturedImage)
+
         // Show success notification
         showCaptureSuccessNotification(capturedImage)
 
@@ -441,6 +444,43 @@ extension HotkeyManager: ScreenshotCaptureDelegate {
         print("🔄 [DELEGATE] Calling clipboardWindow.updateWithCapturedImage...")
         clipboardWindow?.updateWithCapturedImage(capturedImage)
         print("✅ [DELEGATE] Called clipboardWindow.updateWithCapturedImage")
+    }
+
+    private func detectAndSaveAppSource(for capturedImage: CapturedImage) {
+        print("🔍 [APP-SOURCE] Starting app source detection...")
+
+        // Detect the frontmost application (most accurate for screenshot context)
+        let appSourceInfo = AppSourceDetector.shared.detectFrontmostApp()
+
+        // Create source app tuple for ScreenshotDataManager
+        let sourceApp: (bundleID: String, name: String, icon: Data?)?
+        if let appInfo = appSourceInfo {
+            sourceApp = (
+                bundleID: appInfo.bundleID,
+                name: appInfo.name,
+                icon: appInfo.icon
+            )
+            print("✅ [APP-SOURCE] App source detected: \(appInfo.name) (\(appInfo.bundleID))")
+        } else {
+            sourceApp = nil
+            print("⚠️ [APP-SOURCE] No app source detected, proceeding without app info")
+        }
+
+        // Save screenshot to Core Data with smart organization
+        print("💾 [APP-SOURCE] Saving screenshot to Core Data...")
+        let screenshot = ScreenshotDataManager.shared.createScreenshot(
+            from: capturedImage,
+            sourceApp: sourceApp
+        )
+
+        if let screenshot = screenshot {
+            print("✅ [APP-SOURCE] Screenshot saved to database with ID: \(screenshot.id?.uuidString ?? "unknown")")
+            if let category = screenshot.category {
+                print("📁 [APP-SOURCE] Auto-assigned to category: \(category.name ?? "unknown")")
+            }
+        } else {
+            print("❌ [APP-SOURCE] Failed to save screenshot to database")
+        }
     }
 
     func screenshotCaptureFailed(_ error: ScreenshotCaptureError) {

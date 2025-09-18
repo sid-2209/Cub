@@ -212,7 +212,7 @@ struct PreferencesView: View {
                     .onChange(of: settingsStore.windowPositionEnum) {
                         print("📍 [PREFS] Window position changed to: \(settingsStore.windowPositionEnum.displayName)")
                         // Update clipboard window position if it's currently visible
-                        if let window = ClipboardWindowManager.shared.getClipboardWindow() {
+                        if ClipboardWindowManager.shared.getClipboardWindow() != nil {
                             NotificationCenter.default.post(name: NSNotification.Name("WindowPositionChanged"), object: nil)
                         }
                     }

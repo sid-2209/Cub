@@ -20,7 +20,7 @@ class LaunchAtLoginManager: ObservableObject {
 
     var isEnabled: Bool {
         get {
-            return SMLoginItemSetEnabled(launchAtLoginBundleIdentifier as CFString, false)
+            return SMAppService.mainApp.status == .enabled
         }
         set {
             setLaunchAtLogin(enabled: newValue)
@@ -29,32 +29,9 @@ class LaunchAtLoginManager: ObservableObject {
 
     func setLaunchAtLogin(enabled: Bool) {
         print("🚀 [LAUNCH] Setting launch at login: \(enabled)")
-
-        let success = SMLoginItemSetEnabled(launchAtLoginBundleIdentifier as CFString, enabled)
-
-        if success {
-            print("✅ [LAUNCH] Successfully \(enabled ? "enabled" : "disabled") launch at login")
-
-            // Update SettingsStore to keep UI in sync
-            DispatchQueue.main.async {
-                SettingsStore.shared.launchAtLogin = enabled
-            }
-        } else {
-            print("❌ [LAUNCH] Failed to \(enabled ? "enable" : "disable") launch at login")
-
-            // Show error to user
-            DispatchQueue.main.async {
-                self.showLaunchAtLoginError(enabled: enabled)
-            }
-        }
+        setLaunchAtLoginModern(enabled: enabled)
     }
 
-    func checkCurrentStatus() -> Bool {
-        // Check if our helper app is in the login items
-        let success = SMLoginItemSetEnabled(launchAtLoginBundleIdentifier as CFString, false)
-        print("🔍 [LAUNCH] Current launch at login status: \(success)")
-        return success
-    }
 
     // MARK: - Helper Methods
 
@@ -82,22 +59,17 @@ class LaunchAtLoginManager: ObservableObject {
 
     // MARK: - Alternative Implementation for Modern macOS
 
-    /// For macOS 13+ using the modern Login Items API
-    @available(macOS 13.0, *)
-    func setLaunchAtLoginModern(enabled: Bool) {
+    /// Modern Login Items API implementation
+    private func setLaunchAtLoginModern(enabled: Bool) {
         print("🚀 [LAUNCH] Using modern launch at login API: \(enabled)")
 
         do {
             if enabled {
-                if #available(macOS 13.0, *) {
-                    try SMAppService.mainApp.register()
-                    print("✅ [LAUNCH] Successfully registered with SMAppService")
-                }
+                try SMAppService.mainApp.register()
+                print("✅ [LAUNCH] Successfully registered with SMAppService")
             } else {
-                if #available(macOS 13.0, *) {
-                    try SMAppService.mainApp.unregister()
-                    print("✅ [LAUNCH] Successfully unregistered from SMAppService")
-                }
+                try SMAppService.mainApp.unregister()
+                print("✅ [LAUNCH] Successfully unregistered from SMAppService")
             }
 
             // Update SettingsStore
@@ -134,22 +106,14 @@ class LaunchAtLoginManager: ObservableObject {
         }
     }
 
-    // MARK: - Public API with Version Detection
+    // MARK: - Public API
 
     func updateLaunchAtLogin(enabled: Bool) {
-        if #available(macOS 13.0, *) {
-            setLaunchAtLoginModern(enabled: enabled)
-        } else {
-            setLaunchAtLogin(enabled: enabled)
-        }
+        setLaunchAtLogin(enabled: enabled)
     }
 
     func getCurrentStatus() -> Bool {
-        if #available(macOS 13.0, *) {
-            return checkModernStatus()
-        } else {
-            return checkCurrentStatus()
-        }
+        return isEnabled
     }
 }
 
