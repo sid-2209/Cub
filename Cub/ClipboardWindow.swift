@@ -61,6 +61,7 @@ class ClipboardWindow: NSWindow {
         setupWindow()
         setupClipboardView()
         setupActivityTracker()
+        setupNotifications()
         loadWindowState()
     }
 
@@ -100,7 +101,7 @@ class ClipboardWindow: NSWindow {
         setupModernBackground()
 
         // Position window properly
-        positionWindowAtRightEdge()
+        positionWindowAtEdge()
 
         print("📋 Window setup completed with level: \(level.rawValue)")
         print("📋 Window size constraints: min=\(minSize), max=\(maxSize)")
@@ -191,6 +192,26 @@ class ClipboardWindow: NSWindow {
         print("📋 [ACTIVITY] Auto-hide enabled: \(isAutoHideEnabled)")
     }
 
+    private func setupNotifications() {
+        // Listen for window position preference changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowPositionChange),
+            name: NSNotification.Name("WindowPositionChanged"),
+            object: nil
+        )
+
+        // Listen for app-controlled appearance changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppearanceChange),
+            name: .appearanceDidChange,
+            object: nil
+        )
+
+        print("📋 ClipboardWindow notifications set up")
+    }
+
     private func loadVisibilityMode() {
         // Load visibility mode with migration support
         if let modeString = UserDefaults.standard.string(forKey: "ClipboardVisibilityMode"),
@@ -204,7 +225,7 @@ class ClipboardWindow: NSWindow {
         }
     }
 
-    private func positionWindowAtRightEdge() {
+    private func positionWindowAtEdge() {
         print("📍 [POSITION] Starting window positioning...")
 
         var screen = NSScreen.main
@@ -224,6 +245,10 @@ class ClipboardWindow: NSWindow {
         let visibleFrame = validScreen.visibleFrame
         print("📍 [POSITION] Screen visible frame: \(visibleFrame)")
 
+        // Get user's preferred window position
+        let windowPosition = SettingsStore.shared.windowPositionEnum
+        print("📍 [POSITION] User preference: \(windowPosition.displayName)")
+
         // Ensure window fits within screen bounds with stricter constraints
         let maxWidth = visibleFrame.width * 0.25 // Maximum 25% of screen width
         let maxHeight = visibleFrame.height - topMargin * 2
@@ -233,8 +258,16 @@ class ClipboardWindow: NSWindow {
 
         print("📍 [POSITION] Adjusted dimensions: \(adjustedWidth) x \(adjustedHeight)")
 
-        // Calculate X position ensuring we don't go off-screen
-        let xPosition = max(visibleFrame.minX + edgeMargin, visibleFrame.maxX - adjustedWidth - edgeMargin)
+        // Calculate X position based on user preference
+        let xPosition: CGFloat
+        switch windowPosition {
+        case .left:
+            xPosition = visibleFrame.minX + edgeMargin
+            print("📍 [POSITION] Positioning at left edge")
+        case .right:
+            xPosition = visibleFrame.maxX - adjustedWidth - edgeMargin
+            print("📍 [POSITION] Positioning at right edge")
+        }
 
         let newFrame = NSRect(
             x: xPosition,
@@ -334,7 +367,7 @@ class ClipboardWindow: NSWindow {
         wasAutoHidden = false
         windowState = .visible
 
-        positionWindowAtRightEdge()
+        positionWindowAtEdge()
         orderFront(nil)
         alphaValue = 0.0
 
@@ -370,7 +403,7 @@ class ClipboardWindow: NSWindow {
         windowState = .visible
         print("📋 [WINDOW] Setting state to visible, positioning window...")
 
-        positionWindowAtRightEdge()
+        positionWindowAtEdge()
         orderFront(nil)
         alphaValue = 0.0
 
@@ -414,7 +447,7 @@ class ClipboardWindow: NSWindow {
             print("📋 [WINDOW] Setting window to always visible mode")
 
             // First, ensure the window is positioned and visible
-            positionWindowAtRightEdge()
+            positionWindowAtEdge()
             print("📋 [WINDOW] Window positioned at right edge")
 
             // Set state to alwaysVisible
@@ -502,7 +535,7 @@ class ClipboardWindow: NSWindow {
     // MARK: - Screen Changes
 
     func handleScreenChange() {
-        positionWindowAtRightEdge()
+        positionWindowAtEdge()
     }
 
     // MARK: - Helper Properties
@@ -674,7 +707,7 @@ class ClipboardWindow: NSWindow {
     private func forceShowWindow() {
         print("📋 [WINDOW] forceShowWindow() called - forcing window to appear")
 
-        positionWindowAtRightEdge()
+        positionWindowAtEdge()
         orderFront(nil)
         alphaValue = 0.0
 
@@ -804,6 +837,30 @@ class ClipboardWindow: NSWindow {
     override func keyDown(with event: NSEvent) {
         super.keyDown(with: event)
         activityTracker.resetActivity()
+    }
+
+    // MARK: - Notification Handlers
+
+    @objc private func handleAppearanceChange() {
+        print("🎨 [APPEARANCE] App appearance setting changed")
+        // Trigger visual refresh for new appearance
+        DispatchQueue.main.async {
+            self.contentView?.needsDisplay = true
+            // Notify the clipboard view to update its appearance
+            if let clipboardView = self.clipboardView {
+                clipboardView.needsDisplay = true
+            }
+        }
+    }
+
+    @objc private func handleWindowPositionChange() {
+        print("📍 [POSITION] Window position preference changed, repositioning...")
+        // Trigger window repositioning if window is visible
+        if windowState != .hidden {
+            DispatchQueue.main.async {
+                self.positionWindowAtEdge()
+            }
+        }
     }
 }
 
@@ -1077,6 +1134,7 @@ extension DraggableImageView: NSDraggingSource {
         // Optional: Add additional visual feedback during drag
         // Could update cursor or provide other visual cues
     }
+
 }
 
 // MARK: - ClipboardWindowView
@@ -1160,6 +1218,7 @@ class ClipboardWindowView: NSView {
                 object: nil
             )
         }
+
     }
 
     private func setupModernVibrancy() {
@@ -1208,6 +1267,7 @@ class ClipboardWindowView: NSView {
         }
         print("🎨 [MODERN] Effective appearance changed")
     }
+
 
     private func updateForCurrentAppearance() {
         // Update visual elements for current system appearance

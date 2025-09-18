@@ -10,124 +10,64 @@ import SwiftUI
 struct MenuBarContentView: View {
     @EnvironmentObject var permissionManager: PermissionManager
     @EnvironmentObject var hotkeyManager: HotkeyManager
+    @Environment(\.openSettings) private var openSettings
+
+    @State private var currentClipboardMode: ClipboardVisibilityMode = .show
+
+    private func loadCurrentMode() {
+        if let modeString = UserDefaults.standard.string(forKey: "ClipboardVisibilityMode"),
+           let mode = ClipboardVisibilityMode(rawValue: modeString) {
+            currentClipboardMode = mode
+        } else {
+            // Migration from old boolean preference
+            let legacyAlwaysShow = UserDefaults.standard.bool(forKey: "AlwaysShowClipboard")
+            currentClipboardMode = ClipboardVisibilityMode.fromLegacyPreference(alwaysShow: legacyAlwaysShow)
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Permission Status
-            Group {
-                HStack {
-                    Image(systemName: permissionManager.isPermissionGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(permissionManager.isPermissionGranted ? .green : .red)
-                    Text("Screen Recording: \(permissionManager.isPermissionGranted ? "✅ Enabled" : "❌ Disabled")")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+        VStack(spacing: 12) {
+            // Compact Status Section
+            CompactStatusSection()
+                .environmentObject(permissionManager)
+                .environmentObject(hotkeyManager)
 
-                if !permissionManager.isPermissionGranted {
-                    Button("Grant Screen Recording Permission...") {
-                        permissionManager.requestScreenRecordingPermission()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                }
-            }
+            // Clipboard Mode Selection
+            MenuBarModeButtonGroup(
+                currentMode: currentClipboardMode,
+                onModeChange: handleModeChange
+            )
 
-            Divider()
-
-            // Hotkey Status
-            Group {
-                HStack {
-                    Image(systemName: hotkeyManager.hotkeyStatusIcon)
-                        .foregroundColor(hotkeyManager.isHotkeyActive ? .green : .red)
-                    Text("Global Hotkey (⌘E): \(hotkeyManager.isHotkeyActive ? "✅ Active" : "❌ \(hotkeyManager.hotkeyStatusDescription)")")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                HStack {
-                    Button("Test Hotkey (⌘E)") {
-                        hotkeyManager.testHotkey()
-                    }
-                    .disabled(!hotkeyManager.isHotkeyActive)
-
-                    if !hotkeyManager.isHotkeyActive {
-                        Button("Re-register Hotkey") {
-                            hotkeyManager.registerHotkey()
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-            }
-
-            Divider()
-
-            // Clipboard Window Mode Actions
-            Group {
-                Button("Show") {
-                    showAction()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-
-                Button("Always Show") {
-                    alwaysShowAction()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-
-                Button("Hide") {
-                    hideAction()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-
-                Button("Preferences") {
-                    preferencesAction()
-                }
-                .keyboardShortcut(",", modifiers: .command)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-            }
-
-            Divider()
-
-            // Quit
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .keyboardShortcut("q", modifiers: .command)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            // Action Buttons
+            MenuBarActionSection(
+                onPreferences: preferencesAction,
+                onQuit: quitAction
+            )
         }
-        .frame(minWidth: 280)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .frame(minWidth: 240)
+        .onAppear {
+            loadCurrentMode()
+        }
     }
 
-    private func showAction() {
-        print("🖱️ [MENU] Show clicked")
-        print("🔄 [MENU] Setting clipboard visibility mode to Show...")
-        ClipboardWindowManager.shared.setVisibilityMode(.show)
-        print("✅ [MENU] Set visibility mode to Show")
-    }
-
-    private func alwaysShowAction() {
-        print("🖱️ [MENU] Always Show clicked")
-        print("🔄 [MENU] Setting clipboard visibility mode to Always Show...")
-        ClipboardWindowManager.shared.setVisibilityMode(.alwaysShow)
-        print("✅ [MENU] Set visibility mode to Always Show")
-    }
-
-    private func hideAction() {
-        print("🖱️ [MENU] Hide clicked")
-        print("🔄 [MENU] Setting clipboard visibility mode to Hidden...")
-        ClipboardWindowManager.shared.setVisibilityMode(.hidden)
-        print("✅ [MENU] Set visibility mode to Hidden")
+    private func handleModeChange(_ mode: ClipboardVisibilityMode) {
+        print("🖱️ [MENU] Mode changed to: \(mode.displayName)")
+        currentClipboardMode = mode
+        ClipboardWindowManager.shared.setVisibilityMode(mode)
+        print("✅ [MENU] Set visibility mode to \(mode.displayName)")
     }
 
     private func preferencesAction() {
         print("🖱️ [MENU] Preferences clicked")
-        PreferencesWindowController.show()
-        print("✅ [MENU] Preferences window requested to show")
+        openSettings()
+        print("✅ [MENU] Settings scene opened")
+    }
+
+    private func quitAction() {
+        print("🛑 [MENU] Quit clicked")
+        NSApplication.shared.terminate(nil)
     }
 }
 

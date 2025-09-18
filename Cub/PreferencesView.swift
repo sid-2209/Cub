@@ -8,17 +8,52 @@
 import SwiftUI
 import Cocoa
 
+// MARK: - Preference Categories
+
+enum PreferenceCategory: String, CaseIterable, Identifiable {
+    case general = "general"
+    case screenshots = "screenshots"
+    case appearance = "appearance"
+    case privacy = "privacy"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .general: return "General"
+        case .screenshots: return "Screenshots"
+        case .appearance: return "Appearance"
+        case .privacy: return "Privacy & Permissions"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: return "gear"
+        case .screenshots: return "camera"
+        case .appearance: return "paintbrush"
+        case .privacy: return "lock.shield"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .general: return "Application behavior and clipboard settings"
+        case .screenshots: return "Capture settings and hotkey configuration"
+        case .appearance: return "Visual styling and animation preferences"
+        case .privacy: return "System permissions and data sharing"
+        }
+    }
+}
+
 struct PreferencesView: View {
     @ObservedObject var preferencesManager = PreferencesManager.shared
     @EnvironmentObject var permissionManager: PermissionManager
     @EnvironmentObject var hotkeyManager: HotkeyManager
+    @StateObject private var settingsStore = SettingsStore.shared
 
+    @State private var selectedCategory: PreferenceCategory = .general
     @State private var showingDirectoryPicker = false
-    @State private var selectedColorIndex = UserDefaults.standard.integer(forKey: "SelectedBorderColor")
-    @State private var showMenuBarIcon = UserDefaults.standard.bool(forKey: "ShowMenuBarIcon")
-    @State private var clipboardVisibilityMode: ClipboardVisibilityMode = .show
-    @State private var autoDimmingEnabled = UserDefaults.standard.bool(forKey: "AutoDimmingEnabled")
-    @State private var autoHideEnabled = UserDefaults.standard.bool(forKey: "AutoHideEnabled")
 
     private let availableColors: [Color] = [
         .red, .blue, .green, .orange, .purple
@@ -29,165 +64,220 @@ struct PreferencesView: View {
     ]
 
     var body: some View {
-        TabView {
-            generalTab
-                .tabItem {
-                    Label("General", systemImage: "gear")
-                }
-
-            screenshotsTab
-                .tabItem {
-                    Label("Screenshots", systemImage: "camera")
-                }
-
-            appearanceTab
-                .tabItem {
-                    Label("Appearance", systemImage: "paintbrush")
-                }
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detailView
         }
-        .frame(width: 500, height: 400)
+        .frame(minWidth: 710, minHeight: 470)
         .onAppear {
-            loadSettings()
+            setupSettings()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Preferences Window")
+        .focusable()
+        .onKeyPress(.tab) {
+            return .handled
         }
     }
 
-    private var generalTab: some View {
-        Form {
-            Section {
-                GroupBox("Application") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Toggle("Show menu bar icon", isOn: $showMenuBarIcon)
-                            .help("Show or hide the Cub icon in the menu bar")
-                            .onChange(of: showMenuBarIcon) {
-                                UserDefaults.standard.set(showMenuBarIcon, forKey: "ShowMenuBarIcon")
-                                print("🎯 [PREFS] Menu bar icon setting: \(showMenuBarIcon)")
-                            }
+    // MARK: - Sidebar
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Clipboard Window Mode")
-                                .font(.headline)
+    private var sidebar: some View {
+        List(PreferenceCategory.allCases, id: \.self, selection: $selectedCategory) { category in
+            NavigationLink(value: category) {
+                Label(category.displayName, systemImage: category.systemImage)
+                    .font(.system(size: 13, weight: .medium))
+                    .dynamicTypeSize(.small...)
+            }
+            .accessibilityLabel(category.displayName)
+            .accessibilityHint(category.description)
+            .accessibilityAddTraits(selectedCategory == category ? [.isSelected] : [])
+        }
+        .navigationTitle("Preferences")
+        .frame(minWidth: 215)
+        .listStyle(.sidebar)
+    }
 
-                            Picker("Clipboard Mode", selection: $clipboardVisibilityMode) {
-                                ForEach(ClipboardVisibilityMode.allCases, id: \.self) { mode in
-                                    Text(mode.displayName).tag(mode)
-                                }
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                            .onChange(of: clipboardVisibilityMode) {
-                                UserDefaults.standard.set(clipboardVisibilityMode.rawValue, forKey: "ClipboardVisibilityMode")
-                                ClipboardWindowManager.shared.setVisibilityMode(clipboardVisibilityMode)
-                                print("📋 [PREFS] Clipboard visibility mode: \(clipboardVisibilityMode.displayName)")
-                            }
+    // MARK: - Detail View
 
-                            Text(clipboardVisibilityMode.description)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+    private var detailView: some View {
+        Group {
+            switch selectedCategory {
+            case .general:
+                generalView
+            case .screenshots:
+                screenshotsView
+            case .appearance:
+                appearanceView
+            case .privacy:
+                privacyView
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(24)
+        .navigationTitle(selectedCategory.displayName)
+    }
 
-                        Divider()
+    // MARK: - General View
 
-                        Toggle("Auto-dim clipboard after 1 minute", isOn: $autoDimmingEnabled)
-                            .help("Automatically reduce clipboard window opacity after 1 minute of inactivity")
-                            .disabled(!clipboardVisibilityMode.allowsAutoDimming)
-                            .onChange(of: autoDimmingEnabled) {
-                                UserDefaults.standard.set(autoDimmingEnabled, forKey: "AutoDimmingEnabled")
-                                ClipboardWindowManager.shared.setAutoDimmingEnabled(autoDimmingEnabled)
-                                print("🌙 [PREFS] Auto-dimming enabled: \(autoDimmingEnabled)")
-                            }
-
-                        Toggle("Auto-hide clipboard after 3 minutes", isOn: $autoHideEnabled)
-                            .help("Automatically hide clipboard window after 3 minutes of inactivity")
-                            .disabled(!clipboardVisibilityMode.allowsAutoHiding)
-                            .onChange(of: autoHideEnabled) {
-                                UserDefaults.standard.set(autoHideEnabled, forKey: "AutoHideEnabled")
-                                ClipboardWindowManager.shared.setAutoHideEnabled(autoHideEnabled)
-                                print("🙈 [PREFS] Auto-hide enabled: \(autoHideEnabled)")
-                            }
-
-                        if !clipboardVisibilityMode.allowsAutoHiding {
-                            Text("Auto-hide is only available in 'Show' mode")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+    private var generalView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                PreferenceSection("Application Behavior", systemImage: "gear") {
+                    PreferenceToggle(
+                        "Launch at Login",
+                        subtitle: "Start Cub automatically when you log in",
+                        systemImage: "power",
+                        isOn: $settingsStore.launchAtLogin
+                    )
+                    .onChange(of: settingsStore.launchAtLogin) {
+                        LaunchAtLoginManager.shared.updateLaunchAtLogin(enabled: settingsStore.launchAtLogin)
+                        print("🚀 [PREFS] Launch at login setting: \(settingsStore.launchAtLogin)")
                     }
-                    .padding()
+
+                    PreferenceToggle(
+                        "Show Menu Bar Icon",
+                        subtitle: "Display Cub icon in the menu bar",
+                        systemImage: "menubar.rectangle",
+                        isOn: $settingsStore.showMenuBarIcon
+                    )
+                    .onChange(of: settingsStore.showMenuBarIcon) {
+                        UserDefaults.standard.set(settingsStore.showMenuBarIcon, forKey: "ShowMenuBarIcon")
+                        print("🎯 [PREFS] Menu bar icon setting: \(settingsStore.showMenuBarIcon)")
+                    }
+
+                    PreferenceToggle(
+                        "Notifications",
+                        subtitle: "Show system notifications for events",
+                        systemImage: "bell",
+                        isOn: $settingsStore.notificationsEnabled
+                    )
+
+                    PreferenceToggle(
+                        "Sound Effects",
+                        subtitle: "Play sounds for actions and alerts",
+                        systemImage: "speaker.wave.2",
+                        isOn: $settingsStore.soundEnabled
+                    )
                 }
 
-                GroupBox("Permissions") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: permissionManager.isPermissionGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundColor(permissionManager.isPermissionGranted ? .green : .red)
-                            Text("Screen Recording: \(permissionManager.isPermissionGranted ? "Enabled" : "Disabled")")
-                        }
+                PreferenceSection("Clipboard Window", systemImage: "doc.on.clipboard") {
+                    PreferencePicker(
+                        "Visibility Mode",
+                        subtitle: settingsStore.clipboardMode.description,
+                        systemImage: "eye",
+                        selection: $settingsStore.clipboardMode,
+                        style: .segmented
+                    )
+                    .onChange(of: settingsStore.clipboardMode) {
+                        UserDefaults.standard.set(settingsStore.clipboardMode.rawValue, forKey: "ClipboardVisibilityMode")
+                        ClipboardWindowManager.shared.setVisibilityMode(settingsStore.clipboardMode)
+                        print("📋 [PREFS] Clipboard visibility mode: \(settingsStore.clipboardMode.displayName)")
+                    }
 
-                        if !permissionManager.isPermissionGranted {
-                            Button("Grant Screen Recording Permission") {
-                                permissionManager.requestScreenRecordingPermission()
-                            }
+                    PreferenceToggle(
+                        "Auto-dim After 1 Minute",
+                        subtitle: "Reduce opacity when inactive",
+                        systemImage: "moon",
+                        isOn: $settingsStore.autoDimmingEnabled,
+                        disabled: !settingsStore.clipboardMode.allowsAutoDimming
+                    )
+                    .onChange(of: settingsStore.autoDimmingEnabled) {
+                        UserDefaults.standard.set(settingsStore.autoDimmingEnabled, forKey: "AutoDimmingEnabled")
+                        ClipboardWindowManager.shared.setAutoDimmingEnabled(settingsStore.autoDimmingEnabled)
+                        print("🌙 [PREFS] Auto-dimming enabled: \(settingsStore.autoDimmingEnabled)")
+                    }
+
+                    PreferenceToggle(
+                        "Auto-hide After 3 Minutes",
+                        subtitle: settingsStore.clipboardMode.allowsAutoHiding ? "Hide window when inactive" : "Only available in Show mode",
+                        systemImage: "eye.slash",
+                        isOn: $settingsStore.autoHideEnabled,
+                        disabled: !settingsStore.clipboardMode.allowsAutoHiding
+                    )
+                    .onChange(of: settingsStore.autoHideEnabled) {
+                        UserDefaults.standard.set(settingsStore.autoHideEnabled, forKey: "AutoHideEnabled")
+                        ClipboardWindowManager.shared.setAutoHideEnabled(settingsStore.autoHideEnabled)
+                        print("🙈 [PREFS] Auto-hide enabled: \(settingsStore.autoHideEnabled)")
+                    }
+
+                    PreferencePicker(
+                        "Window Position",
+                        subtitle: "Choose which screen edge to anchor the window",
+                        systemImage: "rectangle.portrait.and.arrow.right",
+                        selection: $settingsStore.windowPositionEnum,
+                        style: .segmented
+                    )
+                    .onChange(of: settingsStore.windowPositionEnum) {
+                        print("📍 [PREFS] Window position changed to: \(settingsStore.windowPositionEnum.displayName)")
+                        // Update clipboard window position if it's currently visible
+                        if let window = ClipboardWindowManager.shared.getClipboardWindow() {
+                            NotificationCenter.default.post(name: NSNotification.Name("WindowPositionChanged"), object: nil)
                         }
                     }
-                    .padding()
-                }
-
-                GroupBox("Hotkeys") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: hotkeyManager.hotkeyStatusIcon)
-                                .foregroundColor(hotkeyManager.isHotkeyActive ? .green : .red)
-                            Text("Global Hotkey (⌘E): \(hotkeyManager.isHotkeyActive ? "Active" : hotkeyManager.hotkeyStatusDescription)")
-                        }
-
-                        HStack {
-                            Button("Test Hotkey") {
-                                hotkeyManager.testHotkey()
-                            }
-                            .disabled(!hotkeyManager.isHotkeyActive)
-
-                            if !hotkeyManager.isHotkeyActive {
-                                Button("Re-register Hotkey") {
-                                    hotkeyManager.registerHotkey()
-                                }
-                            }
-                        }
-                    }
-                    .padding()
                 }
             }
         }
-        .padding()
     }
 
-    private var screenshotsTab: some View {
-        Form {
-            Section {
-                GroupBox("Save Location") {
+    // MARK: - Screenshots View
+
+    private var screenshotsView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                PreferenceSection("Capture Settings", systemImage: "camera") {
+                    // Directory section with enhanced UI
                     VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Screenshots saved to:")
-                                .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Image(systemName: "folder")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Save Location")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.primary)
+
+                                Text("Choose where screenshots are saved")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
                             Spacer()
                         }
 
-                        // Directory access status indicator
                         DirectoryStatusView(preferencesManager: preferencesManager)
 
                         HStack {
                             TextField("", text: .constant(preferencesManager.screenshotSaveDirectory.path))
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .textFieldStyle(.roundedBorder)
                                 .disabled(true)
 
-                            Button("Choose Folder...") {
+                            PreferenceButton(
+                                "Choose Folder...",
+                                systemImage: "folder.badge.plus",
+                                style: .secondary
+                            ) {
                                 preferencesManager.selectNewDirectory()
                             }
                         }
 
                         HStack {
-                            Button("Open in Finder") {
+                            PreferenceButton(
+                                "Open in Finder",
+                                systemImage: "finder",
+                                style: .secondary
+                            ) {
                                 NSWorkspace.shared.open(preferencesManager.screenshotSaveDirectory)
                             }
 
-                            Button("Reset to Default") {
+                            PreferenceButton(
+                                "Reset to Default",
+                                systemImage: "arrow.clockwise",
+                                style: .secondary
+                            ) {
                                 let defaultDir = PreferencesManager.getDefaultScreenshotDirectory()
                                 preferencesManager.updateScreenshotDirectory(defaultDir)
                             }
@@ -195,126 +285,250 @@ struct PreferencesView: View {
                             Spacer()
                         }
 
-                        // Permission help text
                         PermissionHelpView(preferencesManager: preferencesManager)
                     }
-                    .padding()
+
+                    PreferencePicker(
+                        "File Format",
+                        subtitle: formatDescription(for: settingsStore.screenshotFormatEnum),
+                        systemImage: "doc",
+                        selection: $settingsStore.screenshotFormatEnum,
+                        style: .segmented
+                    )
+                    .onChange(of: settingsStore.screenshotFormatEnum) {
+                        preferencesManager.updateScreenshotFormat(
+                            PreferencesManager.ScreenshotFormat(rawValue: settingsStore.screenshotFormatEnum.rawValue) ?? .png
+                        )
+                        print("🖼️ [PREFS] Screenshot format: \(settingsStore.screenshotFormatEnum.displayName)")
+                    }
+
+                    PreferenceSlider(
+                        "JPEG Quality",
+                        subtitle: "Higher quality produces larger files",
+                        systemImage: "slider.horizontal.3",
+                        value: $settingsStore.screenshotQuality,
+                        in: 0.1...1.0,
+                        step: 0.1
+                    )
+                    .opacity(settingsStore.screenshotFormatEnum == .jpeg ? 1.0 : 0.5)
+                    .disabled(settingsStore.screenshotFormatEnum != .jpeg)
+
+                    PreferenceToggle(
+                        "Include Timestamp in Filename",
+                        subtitle: "Add date and time to screenshot names",
+                        systemImage: "clock",
+                        isOn: $settingsStore.includeTimestamp
+                    )
                 }
 
-                GroupBox("File Format") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Picker("Format:", selection: $preferencesManager.screenshotFormat) {
-                            ForEach(PreferencesManager.ScreenshotFormat.allCases, id: \.self) { format in
-                                Text(format.displayName).tag(format)
-                            }
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .onChange(of: preferencesManager.screenshotFormat) {
-                            preferencesManager.updateScreenshotFormat(preferencesManager.screenshotFormat)
+                PreferenceSection("Hotkeys", systemImage: "keyboard") {
+                    HStack(spacing: 12) {
+                        Image(systemName: hotkeyManager.hotkeyStatusIcon)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(hotkeyManager.isHotkeyActive ? .green : .red)
+                            .frame(width: 16)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Global Screenshot Hotkey")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.primary)
+
+                            Text("⌘E: \(hotkeyManager.isHotkeyActive ? "Active" : hotkeyManager.hotkeyStatusDescription)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
 
-                        Text(formatDescription(for: preferencesManager.screenshotFormat))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Spacer()
+
+                        if hotkeyManager.isHotkeyActive {
+                            PreferenceButton(
+                                "Test",
+                                systemImage: "play",
+                                style: .primary
+                            ) {
+                                hotkeyManager.testHotkey()
+                            }
+                        } else {
+                            PreferenceButton(
+                                "Re-register",
+                                systemImage: "arrow.clockwise",
+                                style: .primary
+                            ) {
+                                hotkeyManager.registerHotkey()
+                            }
+                        }
                     }
-                    .padding()
+
+                    PreferenceToggle(
+                        "Enable Global Hotkey",
+                        subtitle: "Use ⌘E to trigger screenshots from anywhere",
+                        systemImage: "globe",
+                        isOn: $settingsStore.screenshotHotkeyEnabled
+                    )
                 }
             }
         }
-        .padding()
     }
 
-    private var appearanceTab: some View {
-        Form {
-            Section {
-                GroupBox("Clipboard Window") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Border Color")
-                            .font(.headline)
+    // MARK: - Appearance View
 
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 10) {
-                            ForEach(0..<availableColors.count, id: \.self) { index in
-                                Button(action: {
-                                    selectedColorIndex = index
-                                    UserDefaults.standard.set(index, forKey: "SelectedBorderColor")
-                                    NotificationCenter.default.post(name: NSNotification.Name("BorderColorChanged"), object: nil)
-                                    print("🎨 [PREFS] Border color changed to: \(colorNames[index])")
-                                }) {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(availableColors[index])
-                                        .frame(width: 40, height: 40)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(selectedColorIndex == index ? Color.primary : Color.clear, lineWidth: 3)
-                                        )
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-
-                        Text("Selected: \(colorNames[selectedColorIndex])")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+    private var appearanceView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                PreferenceSection("Visual Styling", systemImage: "paintbrush") {
+                    PreferencePicker(
+                        "Appearance",
+                        subtitle: "Choose the app's appearance theme",
+                        systemImage: "circle.lefthalf.filled",
+                        selection: $settingsStore.appearanceModeEnum,
+                        style: .segmented
+                    )
+                    .onChange(of: settingsStore.appearanceModeEnum) {
+                        AppearanceManager.shared.updateAppearance(mode: settingsStore.appearanceModeEnum)
+                        print("🎨 [PREFS] Appearance mode changed to: \(settingsStore.appearanceModeEnum.displayName)")
                     }
-                    .padding()
+
+                    PreferenceColorPicker(
+                        "Border Color",
+                        subtitle: "Choose the clipboard window border color",
+                        systemImage: "paintpalette",
+                        selectedIndex: $settingsStore.selectedBorderColor,
+                        colors: availableColors,
+                        colorNames: colorNames
+                    )
+                    .onChange(of: settingsStore.selectedBorderColor) {
+                        UserDefaults.standard.set(settingsStore.selectedBorderColor, forKey: "SelectedBorderColor")
+                        NotificationCenter.default.post(name: NSNotification.Name("BorderColorChanged"), object: nil)
+                        print("🎨 [PREFS] Border color changed to: \(colorNames[settingsStore.selectedBorderColor])")
+                    }
+
+                    PreferenceSlider(
+                        "Window Opacity",
+                        subtitle: "Adjust the transparency of the clipboard window",
+                        systemImage: "eye",
+                        value: $settingsStore.windowOpacity,
+                        in: 0.3...1.0,
+                        step: 0.05
+                    )
                 }
 
-                GroupBox("Window Behavior") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Window positioning and visibility preferences")
-                            .font(.headline)
+                PreferenceSection("Animation & Motion", systemImage: "wand.and.stars") {
+                    PreferencePicker(
+                        "Animation Speed",
+                        subtitle: "Control the speed of window animations",
+                        systemImage: "speedometer",
+                        selection: $settingsStore.animationSpeedEnum,
+                        style: .segmented
+                    )
 
-                        Text("The clipboard window automatically positions itself at the right edge of your screen and can be configured to remain always visible or show only when needed.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding()
+                    PreferenceToggle(
+                        "Reduce Motion",
+                        subtitle: "Minimize animations for accessibility",
+                        systemImage: "accessibility",
+                        isOn: $settingsStore.reduceMotion
+                    )
                 }
             }
         }
-        .padding()
     }
 
-    private func loadSettings() {
-        selectedColorIndex = UserDefaults.standard.integer(forKey: "SelectedBorderColor")
-        showMenuBarIcon = UserDefaults.standard.bool(forKey: "ShowMenuBarIcon")
+    // MARK: - Privacy View
 
-        // Load clipboard visibility mode with migration
-        loadClipboardVisibilityMode()
+    private var privacyView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                PreferenceSection("System Permissions", systemImage: "lock.shield") {
+                    HStack(spacing: 12) {
+                        Image(systemName: permissionManager.isPermissionGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(permissionManager.isPermissionGranted ? .green : .red)
+                            .frame(width: 16)
 
-        autoDimmingEnabled = UserDefaults.standard.bool(forKey: "AutoDimmingEnabled")
-        autoHideEnabled = UserDefaults.standard.bool(forKey: "AutoHideEnabled")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Screen Recording")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.primary)
 
-        // Set defaults if first launch
-        if UserDefaults.standard.object(forKey: "AutoDimmingEnabled") == nil {
-            autoDimmingEnabled = true
-            autoHideEnabled = true
-            UserDefaults.standard.set(true, forKey: "AutoDimmingEnabled")
-            UserDefaults.standard.set(true, forKey: "AutoHideEnabled")
+                            Text(permissionManager.isPermissionGranted ? "Permission granted" : "Permission required for screenshots")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if !permissionManager.isPermissionGranted {
+                            PreferenceButton(
+                                "Grant Permission",
+                                systemImage: "plus.circle",
+                                style: .primary
+                            ) {
+                                permissionManager.requestScreenRecordingPermission()
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        Image(systemName: hotkeyManager.isHotkeyActive ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(hotkeyManager.isHotkeyActive ? .green : .red)
+                            .frame(width: 16)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Accessibility")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.primary)
+
+                            Text(hotkeyManager.isHotkeyActive ? "Permission granted for global hotkeys" : "Permission required for hotkeys")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                }
+
+                PreferenceSection("Data & Analytics", systemImage: "chart.bar") {
+                    PreferenceToggle(
+                        "Usage Analytics",
+                        subtitle: "Share anonymous usage data to help improve Cub",
+                        systemImage: "chart.line.uptrend.xyaxis",
+                        isOn: $settingsStore.analyticsEnabled
+                    )
+
+                    PreferenceToggle(
+                        "Crash Reporting",
+                        subtitle: "Automatically send crash reports to help fix bugs",
+                        systemImage: "exclamationmark.triangle",
+                        isOn: $settingsStore.crashReportingEnabled
+                    )
+
+                    PreferenceToggle(
+                        "Share Usage Data",
+                        subtitle: "Help improve features by sharing how you use Cub",
+                        systemImage: "square.and.arrow.up",
+                        isOn: $settingsStore.shareUsageData
+                    )
+                }
+            }
         }
     }
 
-    private func loadClipboardVisibilityMode() {
-        // Check if we have the new preference
-        if let modeString = UserDefaults.standard.string(forKey: "ClipboardVisibilityMode"),
-           let mode = ClipboardVisibilityMode(rawValue: modeString) {
-            clipboardVisibilityMode = mode
-            print("📋 [PREFS] Loaded clipboard visibility mode: \(mode.displayName)")
-        } else {
-            // Migration from old boolean preference
-            let legacyAlwaysShow = UserDefaults.standard.bool(forKey: "AlwaysShowClipboard")
-            clipboardVisibilityMode = ClipboardVisibilityMode.fromLegacyPreference(alwaysShow: legacyAlwaysShow)
+    // MARK: - Helper Methods
 
-            // Save new preference and remove old one
-            UserDefaults.standard.set(clipboardVisibilityMode.rawValue, forKey: "ClipboardVisibilityMode")
-            UserDefaults.standard.removeObject(forKey: "AlwaysShowClipboard")
+    private func setupSettings() {
+        // Migrate from UserDefaults to @AppStorage
+        settingsStore.migrateFromUserDefaults()
 
-            print("📋 [PREFS] Migrated from legacy preference to: \(clipboardVisibilityMode.displayName)")
-        }
+        // Update settings store with current values
+        settingsStore.selectedBorderColor = UserDefaults.standard.integer(forKey: "SelectedBorderColor")
+
+        // Sync launch at login status with system
+        settingsStore.syncLaunchAtLoginWithSystem()
+
+        print("📱 [PREFS] Settings setup completed")
     }
 
-    private func formatDescription(for format: PreferencesManager.ScreenshotFormat) -> String {
+    private func formatDescription(for format: ScreenshotFormat) -> String {
         switch format {
         case .png:
             return "Best quality, larger file size. Supports transparency."

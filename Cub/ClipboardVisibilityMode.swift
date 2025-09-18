@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum ClipboardVisibilityMode: String, CaseIterable {
+enum ClipboardVisibilityMode: String, CaseIterable, DisplayNameProvider {
     case hidden = "hidden"
     case show = "show"
     case alwaysShow = "alwaysShow"

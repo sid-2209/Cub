@@ -19,6 +19,12 @@ struct CubApp: App {
                 .environmentObject(appDelegate.permissionManager)
                 .environmentObject(appDelegate.hotkeyManager)
         }
+
+        Settings {
+            PreferencesView()
+                .environmentObject(appDelegate.permissionManager)
+                .environmentObject(appDelegate.hotkeyManager)
+        }
     }
 }
 
@@ -44,16 +50,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.setPermissionManager(permissionManager)
         hotkeyManager.setClipboardWindow(clipboardWindow!)
 
-        // Create shared preferences window controller
-        PreferencesWindowController.createShared(
-            permissionManager: permissionManager,
-            hotkeyManager: hotkeyManager
-        )
-        print("🪟 [APP] Preferences window controller initialized")
+        // Note: Preferences now handled by Settings scene in SwiftUI
+        print("🪟 [APP] Settings scene will handle preferences")
 
         // Create shared gallery window controller
         GalleryWindowController.createShared()
         print("🖼️ [APP] Gallery window controller initialized")
+
+        // Initialize appearance manager
+        AppearanceManager.shared.initializeAppearance()
+        print("🎨 [APP] Appearance manager initialized")
 
         // Trigger app launch handlers
         print("🔑 [APP] Calling permission and hotkey handleAppLaunch...")
