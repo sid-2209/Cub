@@ -10,7 +10,7 @@ A lightweight macOS screenshot utility with drag-and-drop clipboard management.
 ## Demo
 CLick to watch the current work-in-progress demo:
 
-<a href="assets/Cub_Demo1_720p.mov">
+<a href="assets/club_demo2.mov">
   <img src="assets/Cub_Thumbnail.png" alt="Click to watch Demo" width="600">
 </a>
 
