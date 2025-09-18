@@ -1,14 +1,10 @@
-# Cub – Clip Utility Board
+# Cub – Professional Screenshot Management
 
-A lightweight macOS screenshot utility with drag-and-drop clipboard management.
-
-> ⚠️ **Work in Progress**  
-> This macOS app is currently under development — more features will be added in future releases.
+Cub (Clip Utility Board) is a streamlined clipboard utility for macOS that stays pinned to your screen. With a quick ⌘E shortcut, simply drag to select an area, and Cub instantly captures and stores the screenshot in its clipboard window. It also provides robust organization and filtering tools to keep your captures neatly managed.
 
 ---
 
 ## Demo
-CLick to watch the current work-in-progress demo:
 
 <a href="assets/club_demo2.mov">
   <img src="assets/Cub_Thumbnail.png" alt="Click to watch Demo" width="600">
@@ -16,38 +12,39 @@ CLick to watch the current work-in-progress demo:
 
 ---
 
-## What it does
+## Core Features
 
-Cub is a simple yet powerful screenshot tool that enhances your macOS workflow:
+- **Professional Gallery**: Core Data-powered screenshot management with persistent storage
+- **Advanced Filtering**: 40+ filter options across 10+ categories (date, app, size, format, resolution, orientation)
+- **Batch Operations**: Multi-selection for bulk delete, export, and share operations
+- **Smart Organization**: Auto-categorization by app source and content type detection
+- **Real-time Search**: Instant filtering with comprehensive metadata search
+- **Native Integration**: MenuBarExtra app with translucent materials following Apple HIG
+- **Quick Capture**: Customizable hotkeys (default `⌘E`) with pixel-perfect area selection
+- **Multi-Format Support**: PNG, JPEG, TIFF, GIF, BMP, WebP export capabilities
+- **File System Monitoring**: Real-time detection of external file changes and renames
 
-- **Quick Screenshots** — Press `⌘E` to capture any area of your screen with pixel-perfect selection  
-- **Smart Clipboard Window** — Screenshots appear in a floating clipboard window that stays accessible  
-- **Drag & Drop** — Click and drag images directly from the clipboard window to any app that supports image drops  
-- **Multi-Monitor Support** — Works seamlessly across multiple displays  
-- **Always Available** — Clipboard window can stay visible or appear on-demand  
+## Architecture
 
----
+- **Frontend**: SwiftUI with native macOS design patterns
+- **Data Layer**: Core Data for persistent screenshot metadata storage
+- **Capture Engine**: ScreenCaptureKit integration for high-quality capture
+- **Design System**: Apple Human Interface Guidelines compliance with material design
 
-## How to use
+## Workflow
 
-1. **Take a Screenshot** — Press `⌘E` anywhere on macOS  
-2. **Select Area** — Click and drag to select the area you want to capture  
-3. **View in Clipboard** — Your screenshot appears in the floating clipboard window  
-4. **Drag to Use** — Click, hold, and drag the image to paste it into other applications  
-
----
+1. **Capture**: Press `⌘E` for area selection or use floating clipboard window
+2. **Organize**: Auto-categorization by source app with manual tagging support
+3. **Filter**: Advanced search across metadata, content type, and file properties
+4. **Manage**: Batch operations for professional screenshot workflow management
+5. **Export**: Multi-format export with metadata preservation
 
 ## Requirements
 
-- macOS **15.3+**  
-- Screen recording permissions (requested automatically on first use)  
+- **macOS 15.3+**
+- **Screen Recording Permission** (requested on first launch)
+- **File System Access** (for screenshot storage and organization)
 
----
+## Technical Stack
 
-## Current Status
-
-Cub currently provides **core screenshot and clipboard functionality**.
-
----
-
-Built with **Swift** and **SwiftUI** for native macOS performance.
+Built with **Swift**, **SwiftUI**, **Core Data**, and **ScreenCaptureKit** for native macOS performance and integration.
